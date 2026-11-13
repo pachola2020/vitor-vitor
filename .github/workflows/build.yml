@@ -306,4 +306,165 @@ jobs:
                   super.onCreate()
                   startAsForeground()
 
+                  if (!Settings.canDrawOverlays(this)) {
+                      stopSelf()
+                      return
+                  }
 
+                  try {
+                      WebView.setDataDirectorySuffix("conta$accountId")
+                  } catch (e: Exception) {
+                      // já definido neste processo; segue normalmente
+                  }
+
+                  wm = getSystemService(WINDOW_SERVICE) as WindowManager
+                  buildWindow()
+
+                  val pm = getSystemService(POWER_SERVICE) as PowerManager
+                  wake = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "pokeidle:conta$accountId").apply {
+                      setReferenceCounted(false)
+                      acquire()
+                  }
+                  handler.postDelayed(flusher, 15000)
+              }
+
+              override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+                  if (intent?.action == ACTION_STOP) {
+                      stopSelf()
+                      return START_NOT_STICKY
+                  }
+                  return START_STICKY
+              }
+
+              override fun onDestroy() {
+                  handler.removeCallbacks(flusher)
+                  try {
+                      CookieManager.getInstance().flush()
+                  } catch (e: Exception) {
+                  }
+                  try {
+                      root?.let { wm?.removeView(it) }
+                  } catch (e: Exception) {
+                  }
+                  web?.let {
+                      (it.parent as? ViewGroup)?.removeView(it)
+                      it.destroy()
+                  }
+                  web = null
+                  root = null
+                  try {
+                      wake?.let { if (it.isHeld) it.release() }
+                  } catch (e: Exception) {
+                  }
+                  super.onDestroy()
+              }
+
+              private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
+              private fun startAsForeground() {
+                  val nm = getSystemService(NotificationManager::class.java)
+                  nm.createNotificationChannel(
+                      NotificationChannel(CHANNEL_ID, "Janelas flutuantes", NotificationManager.IMPORTANCE_LOW)
+                  )
+                  val stopPi = PendingIntent.getService(
+                      this,
+                      accountId,
+                      Intent(this, this::class.java).setAction(ACTION_STOP),
+                      PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                  )
+                  val closeAction = Notification.Action.Builder(
+                      Icon.createWithResource(this, android.R.drawable.ic_menu_close_clear_cancel),
+                      "Fechar",
+                      stopPi
+                  ).build()
+                  val notif = Notification.Builder(this, CHANNEL_ID)
+                      .setSmallIcon(android.R.drawable.ic_menu_view)
+                      .setContentTitle("PokeIdle - Conta $accountId")
+                      .setContentText("Janela flutuante ativa")
+                      .setOngoing(true)
+                      .addAction(closeAction)
+                      .build()
+                  val id = 100 + accountId
+                  if (Build.VERSION.SDK_INT >= 34) {
+                      startForeground(id, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+                  } else {
+                      startForeground(id, notif)
+                  }
+              }
+
+              @SuppressLint("SetJavaScriptEnabled")
+              private fun buildWindow() {
+                  val dm = resources.displayMetrics
+                  val prefs = getSharedPreferences("janela$accountId", MODE_PRIVATE)
+                  val portrait = dm.heightPixels >= dm.widthPixels
+
+                  // Tamanho/posição padrão: em pé, uma conta em cima da outra; deitado, lado a lado.
+                  val defW = if (portrait) dm.widthPixels else dm.widthPixels / 2
+                  val defH = if (portrait) (dm.heightPixels * 0.30f).toInt() else (dm.heightPixels * 0.85f).toInt()
+                  val defX = if (portrait) 0 else (accountId - 1) * defW
+                  val defY = if (portrait) dp(40) + (accountId - 1) * defH else dp(8)
+
+                  val w = prefs.getInt("w", defW).coerceIn(dp(160), dm.widthPixels)
+                  val h = prefs.getInt("h", defH).coerceIn(dp(120), dm.heightPixels)
+                  val x = prefs.getInt("x", defX).coerceIn(0, maxOf(0, dm.widthPixels - w))
+                  val y = prefs.getInt("y", defY).coerceIn(0, maxOf(0, dm.heightPixels - h))
+
+                  val params = WindowManager.LayoutParams(
+                      w, h,
+                      WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                          WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                          WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+                      PixelFormat.TRANSLUCENT
+                  )
+                  params.gravity = Gravity.TOP or Gravity.START
+                  params.x = x
+                  params.y = y
+                  params.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN
+                  lp = params
+
+                  val container = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setBackgroundColor(Color.BLACK)
+                  }
+
+                  // Barra de título (arraste por aqui)
+                  val bar = LinearLayout(this).apply {
+                      orientation = LinearLayout.HORIZONTAL
+                      setBackgroundColor(0xFF263238.toInt())
+                      layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(36))
+                  }
+                  val title = TextView(this).apply {
+                      text = "  ≡  Conta $accountId  (arraste aqui)"
+                      setTextColor(Color.WHITE)
+                      textSize = 14f
+                      gravity = Gravity.CENTER_VERTICAL
+                      layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
+                  }
+                  val keyBtn = smallButton("⌨")
+                  val reloadBtn = smallButton("↻")
+                  val closeBtn = smallButton("✕")
+                  bar.addView(title)
+                  bar.addView(keyBtn)
+                  bar.addView(reloadBtn)
+                  bar.addView(closeBtn)
+
+                  // WebView do jogo
+                  val wv = WebView(this)
+                  wv.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+                  wv.settings.javaScriptEnabled = true
+                  wv.settings.domStorageEnabled = true
+                  wv.settings.mediaPlaybackRequiresUserGesture = false
+                  val cookies = CookieManager.getInstance()
+                  cookies.setAcceptCookie(true)
+                  cookies.setAcceptThirdPartyCookies(wv, true)
+                  wv.webViewClient = WebViewClient()
+                  wv.webChromeClient = WebChromeClient()
+                  wv.loadUrl(GAME_URL)
+                  web = wv
+
+                  // Alça de redimensionar (canto inferior direito)
+                  val bottom = LinearLayout(this).apply {
+                      orientation = LinearLayout.HORIZONTAL
+                      gravity = Gravity.END
+           
