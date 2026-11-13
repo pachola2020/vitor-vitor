@@ -467,4 +467,130 @@ jobs:
                   val bottom = LinearLayout(this).apply {
                       orientation = LinearLayout.HORIZONTAL
                       gravity = Gravity.END
-           
+           setBackgroundColor(0xFF263238.toInt())
+                      layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(28))
+                  }
+                  val grip = TextView(this).apply {
+                      text = "◢ tamanho"
+                      setTextColor(Color.WHITE)
+                      textSize = 13f
+                      gravity = Gravity.CENTER
+                      setPadding(dp(12), 0, dp(12), 0)
+                      layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                  }
+                  bottom.addView(grip)
+
+                  container.addView(bar)
+                  container.addView(wv)
+                  container.addView(bottom)
+                  root = container
+
+                  attachDrag(title, false)
+                  attachDrag(grip, true)
+
+                  keyBtn.setOnClickListener {
+                      typing = !typing
+                      val p = lp ?: return@setOnClickListener
+                      p.flags = if (typing) {
+                          p.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+                      } else {
+                          p.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                      }
+                      keyBtn.setTextColor(if (typing) Color.GREEN else Color.WHITE)
+                      wm?.updateViewLayout(container, p)
+                      if (typing) wv.requestFocus()
+                  }
+                  reloadBtn.setOnClickListener { wv.reload() }
+                  closeBtn.setOnClickListener { stopSelf() }
+
+                  wm?.addView(container, params)
+              }
+
+              private fun smallButton(label: String): TextView = TextView(this).apply {
+                  text = label
+                  setTextColor(Color.WHITE)
+                  textSize = 18f
+                  gravity = Gravity.CENTER
+                  layoutParams = LinearLayout.LayoutParams(dp(44), ViewGroup.LayoutParams.MATCH_PARENT)
+              }
+
+              @SuppressLint("ClickableViewAccessibility")
+              private fun attachDrag(handle: View, resize: Boolean) {
+                  var startA = 0
+                  var startB = 0
+                  var touchX = 0f
+                  var touchY = 0f
+                  handle.setOnTouchListener { _, e ->
+                      val p = lp
+                      val r = root
+                      if (p == null || r == null) return@setOnTouchListener true
+                      val dm = resources.displayMetrics
+                      when (e.actionMasked) {
+                          MotionEvent.ACTION_DOWN -> {
+                              startA = if (resize) p.width else p.x
+                              startB = if (resize) p.height else p.y
+                              touchX = e.rawX
+                              touchY = e.rawY
+                          }
+                          MotionEvent.ACTION_MOVE -> {
+                              val dx = (e.rawX - touchX).toInt()
+                              val dy = (e.rawY - touchY).toInt()
+                              if (resize) {
+                                  p.width = (startA + dx).coerceIn(dp(160), dm.widthPixels)
+                                  p.height = (startB + dy).coerceIn(dp(120), dm.heightPixels)
+                              } else {
+                                  p.x = startA + dx
+                                  p.y = startB + dy
+                              }
+                              wm?.updateViewLayout(r, p)
+                          }
+                          MotionEvent.ACTION_UP -> savePrefs()
+                      }
+                      true
+                  }
+              }
+
+              private fun savePrefs() {
+                  val p = lp ?: return
+                  getSharedPreferences("janela$accountId", MODE_PRIVATE).edit()
+                      .putInt("x", p.x)
+                      .putInt("y", p.y)
+                      .putInt("w", p.width)
+                      .putInt("h", p.height)
+                      .apply()
+              }
+          }
+
+          class Conta1Service : OverlayService() {
+              override val accountId: Int = 1
+          }
+
+          class Conta2Service : OverlayService() {
+              override val accountId: Int = 2
+          }
+          EOF
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.9
+
+      - name: Compilar o APK
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Guardar o APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: PokeIdle-2-Contas-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Publicar em Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-${{ github.run_number }}
+          name: PokeIdle 2 Contas (versao ${{ github.run_number }})
+          files: app/build/outputs/apk/debug/app-debug.apk
