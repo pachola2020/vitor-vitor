@@ -1,0 +1,309 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Criar os arquivos do app
+        run: |
+          mkdir -p app app/src/main app/src/main/java/com/duascontas/pokeidle
+          cat > settings.gradle.kts <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "PokeIdleDuasContas"
+          include(":app")
+          EOF
+          cat > build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application") version "8.5.2" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+          }
+          EOF
+          cat > app/build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+
+          android {
+              namespace = "com.duascontas.pokeidle"
+              compileSdk = 34
+
+              defaultConfig {
+                  applicationId = "com.duascontas.pokeidle"
+                  minSdk = 26
+                  targetSdk = 34
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+          }
+          EOF
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+              <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+              <application
+                  android:allowBackup="false"
+                  android:label="PokeIdle 2 Contas"
+                  android:theme="@android:style/Theme.Material.NoActionBar">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+
+                  <!-- Cada conta roda em um processo separado: assim os logins (cookies) ficam isolados -->
+                  <service
+                      android:name=".Conta1Service"
+                      android:process=":conta1"
+                      android:exported="false"
+                      android:foregroundServiceType="specialUse">
+                      <property
+                          android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                          android:value="janela_flutuante_de_jogo" />
+                  </service>
+
+                  <service
+                      android:name=".Conta2Service"
+                      android:process=":conta2"
+                      android:exported="false"
+                      android:foregroundServiceType="specialUse">
+                      <property
+                          android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                          android:value="janela_flutuante_de_jogo" />
+                  </service>
+
+              </application>
+          </manifest>
+          EOF
+          cat > app/src/main/java/com/duascontas/pokeidle/MainActivity.kt <<'EOF'
+          package com.duascontas.pokeidle
+
+          import android.Manifest
+          import android.app.Activity
+          import android.content.Intent
+          import android.net.Uri
+          import android.os.Build
+          import android.os.Bundle
+          import android.provider.Settings
+          import android.view.ViewGroup
+          import android.widget.Button
+          import android.widget.LinearLayout
+          import android.widget.ScrollView
+          import android.widget.TextView
+          import android.widget.Toast
+
+          class MainActivity : Activity() {
+
+              private lateinit var status: TextView
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+
+                  val pad = (16 * resources.displayMetrics.density).toInt()
+                  val col = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setPadding(pad, pad * 2, pad, pad)
+                  }
+
+                  col.addView(text("PokeIdle - 2 Contas", 22f))
+                  col.addView(text("Abre as duas contas em janelas flutuantes, com login separado.", 14f))
+
+                  status = text("", 15f)
+                  col.addView(status)
+
+                  col.addView(text("PASSO 1 - Permissões (só na primeira vez)", 16f))
+                  col.addView(button("1. Permitir exibir sobre outros apps") {
+                      startActivity(
+                          Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
+                      )
+                  })
+                  col.addView(button("2. Permitir notificações") {
+                      if (Build.VERSION.SDK_INT >= 33) {
+                          requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+                      } else {
+                          Toast.makeText(this, "Já está liberado neste Android", Toast.LENGTH_SHORT).show()
+                      }
+                  })
+                  col.addView(button("3. Bateria: deixar sem restrições") {
+                      startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                  })
+                  col.addView(
+                      text(
+                          "No POCO: Configurações > Apps > PokeIdle 2 Contas > Economia de bateria > " +
+                              "\"Sem restrições\", e ative também \"Início automático\". " +
+                              "Isso evita que o sistema feche o jogo em segundo plano.",
+                          13f
+                      )
+                  )
+
+                  col.addView(text("PASSO 2 - Abrir as janelas", 16f))
+                  col.addView(button("Abrir as duas contas") {
+                      start(Conta1Service::class.java)
+                      start(Conta2Service::class.java)
+                  })
+                  col.addView(button("Abrir só a conta 1") { start(Conta1Service::class.java) })
+                  col.addView(button("Abrir só a conta 2") { start(Conta2Service::class.java) })
+                  col.addView(button("Fechar todas as janelas") {
+                      stopService(Intent(this, Conta1Service::class.java))
+                      stopService(Intent(this, Conta2Service::class.java))
+                  })
+
+                  col.addView(
+                      text(
+                          "Dicas: arraste pela barra de título para mover; use \"◢ tamanho\" para " +
+                              "redimensionar. Para digitar (login), toque em ⌨ (fica verde), toque no campo, " +
+                              "digite e toque em ⌨ de novo para soltar o teclado. ↻ recarrega, ✕ fecha.",
+                          13f
+                      )
+                  )
+
+                  val sv = ScrollView(this)
+                  sv.addView(col)
+                  setContentView(sv)
+              }
+
+              override fun onResume() {
+                  super.onResume()
+                  status.text = if (Settings.canDrawOverlays(this)) {
+                      "✔ Exibir sobre outros apps: liberado"
+                  } else {
+                      "✖ Falta liberar \"Exibir sobre outros apps\" (botão 1)"
+                  }
+              }
+
+              private fun start(cls: Class<*>) {
+                  if (!Settings.canDrawOverlays(this)) {
+                      Toast.makeText(this, "Antes, libere \"Exibir sobre outros apps\" (botão 1)", Toast.LENGTH_LONG).show()
+                      return
+                  }
+                  startForegroundService(Intent(this, cls))
+              }
+
+              private fun text(t: String, size: Float): TextView = TextView(this).apply {
+                  text = t
+                  textSize = size
+                  setPadding(0, 12, 0, 12)
+                  layoutParams = LinearLayout.LayoutParams(
+                      ViewGroup.LayoutParams.MATCH_PARENT,
+                      ViewGroup.LayoutParams.WRAP_CONTENT
+                  )
+              }
+
+              private fun button(label: String, onClick: () -> Unit): Button = Button(this).apply {
+                  text = label
+                  isAllCaps = false
+                  setOnClickListener { onClick() }
+              }
+          }
+          EOF
+          cat > app/src/main/java/com/duascontas/pokeidle/OverlayService.kt <<'EOF'
+          package com.duascontas.pokeidle
+
+          import android.annotation.SuppressLint
+          import android.app.Notification
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.app.PendingIntent
+          import android.app.Service
+          import android.content.Intent
+          import android.content.pm.ServiceInfo
+          import android.graphics.Color
+          import android.graphics.PixelFormat
+          import android.graphics.drawable.Icon
+          import android.os.Build
+          import android.os.Handler
+          import android.os.IBinder
+          import android.os.Looper
+          import android.os.PowerManager
+          import android.provider.Settings
+          import android.view.Gravity
+          import android.view.MotionEvent
+          import android.view.View
+          import android.view.ViewGroup
+          import android.view.WindowManager
+          import android.webkit.CookieManager
+          import android.webkit.WebChromeClient
+          import android.webkit.WebView
+          import android.webkit.WebViewClient
+          import android.widget.LinearLayout
+          import android.widget.TextView
+
+          /**
+           * Janela flutuante com o jogo. Cada conta usa uma subclasse (Conta1Service / Conta2Service)
+           * que roda em processo próprio, com dados do navegador separados.
+           */
+          open class OverlayService : Service() {
+
+              protected open val accountId: Int = 1
+
+              companion object {
+                  const val GAME_URL = "https://pokeidle.io/app"
+                  const val ACTION_STOP = "com.duascontas.pokeidle.STOP"
+                  private const val CHANNEL_ID = "janelas"
+              }
+
+              private var wm: WindowManager? = null
+              private var root: LinearLayout? = null
+              private var web: WebView? = null
+              private var lp: WindowManager.LayoutParams? = null
+              private var wake: PowerManager.WakeLock? = null
+              private var typing = false
+              private val handler = Handler(Looper.getMainLooper())
+
+              private val flusher = object : Runnable {
+                  override fun run() {
+                      CookieManager.getInstance().flush()
+                      handler.postDelayed(this, 15000)
+                  }
+              }
+
+              override fun onBind(intent: Intent?): IBinder? = null
+
+              override fun onCreate() {
+                  super.onCreate()
+                  startAsForeground()
+
+
