@@ -41,12 +41,33 @@ jobs:
               -dname "CN=Android Debug,O=PokeIdle Assistant,C=BR"
           fi
 
+      # Diagnóstico: confirmar que o Gradle usa exatamente a keystore restaurada.
+      - name: Diagnosticar caminho e certificado da assinatura
+        run: |
+          echo "HOME=$HOME"
+          echo "ANDROID_USER_HOME=${ANDROID_USER_HOME:-<unset>}"
+          echo "GRADLE_USER_HOME=${GRADLE_USER_HOME:-<unset>}"
+          java -XshowSettings:properties -version 2>&1 | grep 'user.home'
+          find /home/runner -type f -name debug.keystore -print 2>/dev/null | while read ks; do
+            echo "KEYSTORE_PATH=$ks"
+            keytool -list -v -keystore "$ks" -storepass android -alias androiddebugkey 2>/dev/null | grep -E 'Owner:|SHA256:'
+          done
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.9
 
       - name: Compilar APK de teste
         run: gradle testDebugUnitTest lintDebug assembleDebug --no-daemon --stacktrace
+
+      - name: Conferir certificado efetivo do APK
+        run: |
+          APKSIGNER=$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/build-tools" -type f -name apksigner 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$APKSIGNER" ]; then
+            echo "apksigner não encontrado no SDK"
+            exit 1
+          fi
+          "$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk
 
       - name: Guardar APK para teste
         uses: actions/upload-artifact@v4
@@ -65,10 +86,14 @@ jobs:
         run: |
           VERSION_NAME=$(grep 'versionName' app/build.gradle.kts | sed -E 's/.*"([^"]+)".*/\1/' | sed 's/-analysis-test$//')
           TAG="assistant-v${VERSION_NAME}"
-          gh release create "$TAG" app/build/outputs/apk/debug/PokeIdle-Assistant.apk \
-            --title "PokeIdle Assistant ${VERSION_NAME}" \
-            --notes "Versão de teste do PokeIdle Assistant. Instalação iniciada pelo botão Verificar atualização no app; o Android ainda solicitará confirmação." \
-            --prerelease --target "$GITHUB_SHA"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG já existe; preservando o APK publicado e pulando a criação."
+          else
+            gh release create "$TAG" app/build/outputs/apk/debug/PokeIdle-Assistant.apk \
+              --title "PokeIdle Assistant ${VERSION_NAME}" \
+              --notes "Versão de teste do PokeIdle Assistant. Instalação iniciada pelo botão Verificar atualização no app; o Android ainda solicitará confirmação." \
+              --prerelease --target "$GITHUB_SHA"
+          fi
 
       - name: Publicar release (somente main/master)
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
