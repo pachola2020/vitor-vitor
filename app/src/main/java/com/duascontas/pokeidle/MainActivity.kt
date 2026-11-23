@@ -43,6 +43,7 @@ class MainActivity : Activity() {
     private lateinit var permissionStatus: TextView
     private var selectedAccount = 1
     private var dashboardData: org.json.JSONObject? = null
+    private var dashboardLoadGeneration = 0
     private val accountNames = listOf("Principal", "Alt 1", "Alt 2")
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -74,10 +75,13 @@ class MainActivity : Activity() {
         if (loadSnapshot) {
             dashboardData = null
             val requestedAccount = selectedAccount
+            val generation = ++dashboardLoadGeneration
             Thread {
                 val snapshot = CaptureStore.read(this, requestedAccount)
                 runOnUiThread {
-                    if (!isFinishing && selectedAccount == requestedAccount) {
+                    if (!isFinishing && selectedAccount == requestedAccount &&
+                        generation == dashboardLoadGeneration
+                    ) {
                         dashboardData = snapshot
                         renderDashboard(loadSnapshot = false)
                     }
