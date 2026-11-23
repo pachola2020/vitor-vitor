@@ -76,7 +76,7 @@ class MainActivity : Activity() {
         brand.addView(label("Assistant", 28f, TEXT, true))
         brand.addView(label("Painel pessoal de acompanhamento", 13f, MUTED))
         top.addView(brand, LinearLayout.LayoutParams(0, -2, 1f))
-        val version = label("TESTE\n0.5.7", 11f, MUTED, true).apply {
+        val version = label("TESTE\n0.5.8", 11f, MUTED, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(10), dp(8), dp(10), dp(8))
             setBackgroundColor(PANEL_ALT)
@@ -255,7 +255,14 @@ class MainActivity : Activity() {
         val activeFound = diag?.optBoolean("activePokemonFound", false) == true
         val messageTypes = diag?.optJSONObject("typeCounts")?.toString() ?: "{}"
         val battleKinds = diag?.optJSONObject("battleEventKinds")?.toString() ?: "{}"
-        val diagnosticText = " · Protocolo: $frames JSON, welcome $welcomeCount, estado $estadoCount, última: $lastType · Tipos de mensagem: $messageTypes · Eventos de batalha: $battleKinds · Estrutura: $huntsWithSpecies Hunts/$speciesEntries grupos de espécies, $statsCount Pokémon com stats, $speciesIdCount com speciesId, $typeEntries tipos, ativo ${if (activeFound) "ok" else "não encontrado"}"
+        val fieldCount = diag?.optInt("field", 0) ?: 0
+        val fieldKeys = diag?.optJSONArray("fieldDataKeys")?.let { arr ->
+            (0 until arr.length()).joinToString(", ") { arr.optString(it) }
+        } ?: "aguardando"
+        val marketKeys = diag?.optJSONArray("marketMessageKeys")?.let { arr ->
+            (0 until arr.length()).joinToString(", ") { arr.optString(it) }
+        } ?: "aguardando"
+        val diagnosticText = " · Protocolo: $frames JSON, welcome $welcomeCount, estado $estadoCount, última: $lastType · Tipos de mensagem: $messageTypes · Eventos de batalha: $battleKinds · Campo: $fieldCount eventos [$fieldKeys] · Chaves do mercado: $marketKeys · Estrutura: $huntsWithSpecies Hunts/$speciesEntries grupos de espécies, $statsCount Pokémon com stats, $speciesIdCount com speciesId, $typeEntries tipos, ativo ${if (activeFound) "ok" else "não encontrado"}"
         return if (player != null && hunts > 0) {
             "DADOS RECEBIDOS · ${accountNames[selectedAccount - 1].uppercase()}" to
                 "$hunts Hunts recebidas · Equipe: $teamCount Pokémon · Catálogo de combate: ${if (combatReady) "recebido" else "incompleto"} · Treinador Nv. $level · Hunt: $hunt · Pokémon ativo: $pokemon$marketText$diagnosticText · $freshness. Captura observacional; ranking comparativo ainda não está integrado."
