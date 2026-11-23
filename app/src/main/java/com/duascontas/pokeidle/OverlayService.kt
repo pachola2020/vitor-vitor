@@ -557,7 +557,7 @@ open class OverlayService : Service() {
         val params = lp
         if (params != null) {
             hunterPreviousHeight = params.height
-            params.height = maxOf(params.height, dp(340)).coerceAtMost(resources.displayMetrics.heightPixels)
+            params.height = maxOf(params.height, dp(410)).coerceAtMost(resources.displayMetrics.heightPixels)
             frame?.let { wm?.updateViewLayout(it, params) }
         }
         panel.visibility = View.VISIBLE
@@ -704,7 +704,7 @@ open class OverlayService : Service() {
                         buildString {
                             append("BÔNUS DE XP\n")
                             append("Guilda: ${xp?.optDouble("guildBonusPct", 0.0) ?: 0.0}%\n")
-                            append("VIP: ${if (vipActive) "ativo" else if (vipUntil > 0) "expirado" else "sem informação"}\n")
+                            append("VIP: ${if (vipUntil > 0) "data cadastrada (validade a confirmar)" else "sem informação"}\n")
                             append("Twitch: ${if (twitch?.optBoolean("assistindo", false) == true) "+${twitch.optDouble("pctAtual", 0.0)}%" else "não ativo/sem dado"}\n")
                             append("Kick: ${kick?.optDouble("pct", 0.0)?.takeIf { it > 0 }?.let { "+$it%" } ?: "não ativo/sem dado"}\n")
                             append("Evento: ${xp?.opt("evento")?.toString() ?: "nenhum informado"}")
