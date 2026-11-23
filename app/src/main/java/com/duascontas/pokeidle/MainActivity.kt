@@ -122,7 +122,7 @@ class MainActivity : Activity() {
             listOf("XP DO POKÉMON / H", "XP DO TREINADOR / H"),
             listOf("COINS ATUAIS", "COINS LÍQUIDOS / H"),
             listOf("ABATES / H", "SOBREVIVÊNCIA"),
-            listOf("ENCONTROS SHINY / H", "")
+            listOf("ENCONTROS SHINY / H", "SHINY CAPTURADOS")
         )
         metricRows.forEach { pair ->
             val r = row()
@@ -257,7 +257,7 @@ class MainActivity : Activity() {
             "XP DO POKÉMON / H" -> m?.optLong("xpPokemonH", -1L) ?: -1L
             "XP DO TREINADOR / H" -> m?.optLong("xpTrainerH", -1L) ?: -1L
             "COINS ATUAIS" -> data?.optLong("coinsBalance", player?.optLong("coins", player?.optLong("gold", -1L) ?: -1L) ?: -1L) ?: -1L
-            "COINS LÍQUIDOS / H" -> if (m?.has("coinsNetH") == true) m.optLong("coinsNetH") else Long.MIN_VALUE
+            "COINS LÍQUIDOS / H" -> m?.let { if (it.has("coinsNetH")) it.optLong("coinsNetH") else Long.MIN_VALUE } ?: Long.MIN_VALUE
             "ABATES / H" -> m?.optLong("killsH", -1L) ?: -1L
             "SOBREVIVÊNCIA" -> (m?.optInt("survivalPct", -1) ?: -1).toLong()
             else -> -1L
