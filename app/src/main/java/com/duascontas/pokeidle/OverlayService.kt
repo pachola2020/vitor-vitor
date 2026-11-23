@@ -584,34 +584,47 @@ open class OverlayService : Service() {
         panel.addView(header)
         val actions = listOf(
             "Oportunidades" to "opportunities",
-            "Bônus de XP" to "xp",
+            "Bônus XP" to "xp",
             "Shiny" to "shiny",
-            "Ver resultado da Hunt" to "hunt_result",
-            "Calcular Hunt agora" to "hunt"
+            "Ver resultado" to "hunt_result",
+            "Calcular Hunt" to "hunt"
         )
-        actions.forEach { (label, key) ->
-            val button = TextView(this).apply {
-                text = label
-                textSize = 13f
-                setTextColor(Color.WHITE)
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(10), 0, dp(10), 0)
-                background = GradientDrawable().apply {
-                    setColor(0xFF263544.toInt())
-                    cornerRadius = dp(10).toFloat()
-                }
+        actions.chunked(2).forEach { group ->
+            val actionRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
                 layoutParams = LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(40)
-                ).apply { bottomMargin = dp(6) }
-                setOnClickListener { showHunterSection(key) }
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(36)
+                ).apply { bottomMargin = dp(5) }
             }
-            panel.addView(button)
+            group.forEachIndexed { index, (label, key) ->
+                val button = TextView(this).apply {
+                    text = label
+                    textSize = 12f
+                    setTextColor(Color.WHITE)
+                    gravity = Gravity.CENTER
+                    background = GradientDrawable().apply {
+                        setColor(0xFF263544.toInt())
+                        cornerRadius = dp(9).toFloat()
+                    }
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply {
+                        if (index > 0) marginStart = dp(5)
+                    }
+                    setOnClickListener { showHunterSection(key) }
+                }
+                actionRow.addView(button)
+            }
+            if (group.size == 1) {
+                val spacer = View(this)
+                actionRow.addView(spacer, LinearLayout.LayoutParams(0, 1, 1f))
+            }
+            panel.addView(actionRow)
         }
         val result = TextView(this).apply {
             text = "Escolha uma consulta. A análise só será executada quando você solicitar."
             textSize = 11f
             setTextColor(0xFFD5DEE7.toInt())
-            setPadding(dp(4), dp(6), dp(4), dp(4))
+            setPadding(dp(4), dp(4), dp(4), dp(2))
+            maxLines = 5
         }
         hunterResult = result
         panel.addView(result)
