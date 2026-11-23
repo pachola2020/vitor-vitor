@@ -475,19 +475,28 @@ object GameDataCapture {
         xpPokemonH: Math.round(xpP), xpTreinadorH: Math.round(xpT), goldH: Math.round(gold),
         abatesH: Math.round(killsSingle),
         xpPokemonHAoeHipotetico: Math.round(killsAoe * xpPerKill * xpPokemonMult),
+        xpTreinadorHAoeHipotetico: Math.round(killsAoe * xpPerKill * xpTrainerMult),
         goldHAoeHipotetico: Math.round(killsAoe * goldPerKill),
+        abatesHAoeHipotetico: Math.round(killsAoe),
         possuiAoe: aoePossible,
         confianca: 'baixa: sem geometria de campo e ritmo medido',
         observacaoAoe: 'cenário hipotético com 2,2 alvos por golpe; não é resultado medido'
       });
     }
-    rows.sort((a,b) => b.xpPokemonH - a.xpPokemonH);
+    const noAoeRows = rows.slice().sort((a,b) => b.xpPokemonH - a.xpPokemonH);
+    const aoeRows = rows.slice().sort((a,b) => b.xpPokemonHAoeHipotetico - a.xpPokemonHAoeHipotetico);
+    const goldRows = rows.slice().sort((a,b) => b.goldH - a.goldH);
+    const hasAoe = pk.tmAoe === true || pk.tmAoe === 1 || pk.tmAoe === 'true';
     return {
       pokemonId: pk.id, nome: pk.nome || species.name || ('Pokémon ' + pk.speciesId),
-      level, tmAoe: !!(pk.tmAoe === true || pk.tmAoe === 1 || pk.tmAoe === 'true'),
-      melhorXp: rows[0] || null,
-      melhorGold: rows.slice().sort((a,b) => b.goldH - a.goldH)[0] || null,
-      topHunts: rows.slice(0, 5),
+      level, tmAoe: hasAoe, ativo: String(pk.id) === String(state?.activeId),
+      melhorXp: (hasAoe ? aoeRows[0] : noAoeRows[0]) || null,
+      melhorXpSemAoe: noAoeRows[0] || null,
+      melhorXpComAoe: aoeRows[0] || null,
+      melhorGold: goldRows[0] || null,
+      topHunts: (hasAoe ? aoeRows : noAoeRows).slice(0, 5),
+      topHuntsSemAoe: noAoeRows.slice(0, 5),
+      topHuntsComAoe: aoeRows.slice(0, 5),
       huntsAnalisadas: rows.length
     };
   };
@@ -501,8 +510,17 @@ object GameDataCapture {
         return;
       }
       await loadAnalysisDependencies();
-      const candidates = state.pokemons.filter(p => p && p.id != null && p.speciesId != null && p.stats);
-      const results = candidates.slice(0, 12).map(pk => estimatePokemonHunts(pk, catalogData)).filter(Boolean);
+      const candidates = state.pokemons
+        .filter(p => p && p.id != null && p.speciesId != null && p.stats)
+        .sort((a,b) => {
+          const activeA = String(a.id) === String(state.activeId) ? 1 : 0;
+          const activeB = String(b.id) === String(state.activeId) ? 1 : 0;
+          if (activeA !== activeB) return activeB - activeA;
+          const teamA = a.slot != null ? 1 : 0, teamB = b.slot != null ? 1 : 0;
+          if (teamA !== teamB) return teamB - teamA;
+          return (Number(b.level) || 0) - (Number(a.level) || 0);
+        });
+      const results = candidates.slice(0, 20).map(pk => estimatePokemonHunts(pk, catalogData)).filter(Boolean);
       huntAnalysis = {
         status: results.length ? 'estimativa_disponivel' : 'sem_dados',
         calculadoEm: Date.now(),
