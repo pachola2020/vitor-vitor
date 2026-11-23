@@ -698,7 +698,7 @@ class MainActivity : Activity() {
         }
         val lines = buildString {
             appendLine("ORIGEM DOS DADOS")
-            appendLine("Aba: ${tab.ifBlank { "não identificada" }} · Capturado em: ${market.optLong("atualizadoEm", 0L).takeIf { it > 0L }?.let { java.text.SimpleDateFormat("dd/MM HH:mm", java.util.Locale("pt", "BR").apply { })?.format(java.util.Date(it)) } ?: "horário indisponível"}")
+            appendLine("Aba: ${tab.ifBlank { "não identificada" }} · Capturado em: ${market.optLong("atualizadoEm", 0L).takeIf { it > 0L }?.let { java.text.SimpleDateFormat("dd/MM HH:mm", java.util.Locale("pt", "BR"))?.format(java.util.Date(it)) } ?: "horário indisponível"}")
             appendLine("Registros guardados: ${linesArray.length()} · Total informado pelo jogo: ${market.optInt("total", 0)}")
             appendLine("Páginas observadas: ${market.optJSONArray("paginasObservadas")?.length() ?: 1}")
             appendLine()
@@ -711,7 +711,8 @@ class MainActivity : Activity() {
                         val group = samples.filter { it.currency.contains(currency) }
                         if (group.isEmpty()) continue
                         val sorted = group.map { it.price }.sorted()
-                        val median = sorted[sorted.size / 2]
+                        val middle = sorted.size / 2
+                        val median = if (sorted.size % 2 == 0) ((sorted[middle - 1].toDouble() + sorted[middle].toDouble()) / 2.0).toLong() else sorted[middle]
                         val volume = group.sumOf { it.price }
                         val estimatedNet = group.sumOf { sample ->
                             val rate = when {
