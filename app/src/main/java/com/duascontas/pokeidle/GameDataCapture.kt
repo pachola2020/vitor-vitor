@@ -149,11 +149,24 @@ object GameDataCapture {
       const elapsed = last.t - first.t;
       minutes = Math.round(elapsed / 60000);
       if (elapsed >= 120000) {
-        let trainerXp = 0;
-        for (let i = 1; i < samples.length; i++) {
-          trainerXp += Math.max(0, samples[i].tx - samples[i - 1].tx);
+        // XP do treinador pode reiniciar ao subir de nível. Medimos apenas
+        // a sequência contínua do nível atual, sem atravessar o reset.
+        const trainerSamples = [];
+        const trainerLevel = String(last.tl ?? '');
+        for (let i = samples.length - 1; i >= 0; i--) {
+          if (String(samples[i].tl ?? '') !== trainerLevel) break;
+          trainerSamples.unshift(samples[i]);
         }
-        xpTrainerH = Math.round(trainerXp * 3600000 / elapsed);
+        if (trainerSamples.length >= 2) {
+          const trainerElapsed = trainerSamples[trainerSamples.length - 1].t - trainerSamples[0].t;
+          if (trainerElapsed >= 120000) {
+            let trainerXp = 0;
+            for (let i = 1; i < trainerSamples.length; i++) {
+              trainerXp += Math.max(0, trainerSamples[i].tx - trainerSamples[i - 1].tx);
+            }
+            xpTrainerH = Math.round(trainerXp * 3600000 / trainerElapsed);
+          }
+        }
 
         // XP do Pokémon só é comparado dentro da sequência contínua do mesmo ativo.
         // Trocar o Pokémon não pode produzir XP/h artificialmente alto ou negativo.
@@ -376,7 +389,7 @@ object GameDataCapture {
               if (active) {
                 samples.push({
                   t: Date.now(), pid: active.id, px: Number(active.xp) || 0,
-                  tx: Number(state.xp) || 0,
+                  tx: Number(state.xp) || 0, tl: state.level ?? null,
                   hp: Number.isFinite(Number(active.hp)) ? Number(active.hp) : null,
                   maxHp: Number(active.maxHp) || 0,
                   coins: readCoins().value
