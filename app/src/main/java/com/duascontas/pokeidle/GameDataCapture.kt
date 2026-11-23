@@ -179,7 +179,7 @@ object GameDataCapture {
   };
   // Telemetria exploratória: registra apenas eventos cujos nomes/campos mencionem Prey/presa.
   // A ausência de sinal não prova que a mecânica não exista; o formato do jogo ainda precisa ser observado.
-  const preyTelemetry = { eventCounts: {}, samples: [], lastAt: 0 };
+  const preyTelemetry = { eventCounts: {}, samples: [], stateKeys: [], lastAt: 0 };
   const safeMarketLine = (line) => {
     const f = line && (line.ficha || line.pokemon) ? (line.ficha || line.pokemon) : {};
     const ficha = {};
@@ -758,7 +758,12 @@ object GameDataCapture {
       },
       gameSession: readGameSession(),
       huntAnalysis,
-      preyTelemetry: { eventCounts: { ...preyTelemetry.eventCounts }, samples: preyTelemetry.samples.slice(-40), lastAt: preyTelemetry.lastAt },
+      preyTelemetry: {
+        eventCounts: { ...preyTelemetry.eventCounts },
+        samples: preyTelemetry.samples.slice(-40),
+        stateKeys: Object.keys(state || {}).filter(k => /prey|presa|preda/i.test(k)).slice(0, 20),
+        lastAt: preyTelemetry.lastAt
+      },
       measurements: metrics, market: marketData, fieldData,
       diagnostics: {
         ...diagnostics,
