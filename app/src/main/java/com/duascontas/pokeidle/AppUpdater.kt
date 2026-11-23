@@ -77,7 +77,7 @@ object AppUpdater {
                         val downloadUrl = asset.optString("browser_download_url")
                         val parsedUrl = runCatching { Uri.parse(downloadUrl) }.getOrNull()
                         if (!digest.matches(Regex("^[0-9a-f]{64}$")) ||
-                            parsedUrl?.scheme != "https" || parsedUrl.host != "github.com"
+                            parsedUrl == null || parsedUrl.scheme != "https" || parsedUrl.host != "github.com"
                         ) continue
                         if (newest == null || isNewer(version, newest!!.versionName)) {
                             newest = UpdateInfo(version, downloadUrl, digest)
@@ -113,7 +113,7 @@ object AppUpdater {
 
     fun downloadAndInstall(activity: Activity, update: UpdateInfo) {
         val parsedUrl = runCatching { Uri.parse(update.downloadUrl) }.getOrNull()
-        if (parsedUrl?.scheme != "https" || parsedUrl.host != "github.com" ||
+        if (parsedUrl == null || parsedUrl.scheme != "https" || parsedUrl.host != "github.com" ||
             !update.sha256.matches(Regex("^[0-9a-fA-F]{64}$")) ||
             versionParts(update.versionName) == null
         ) {
