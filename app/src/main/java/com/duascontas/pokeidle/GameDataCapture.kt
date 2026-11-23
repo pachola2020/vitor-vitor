@@ -67,8 +67,8 @@ object GameDataCapture {
   let catalogData = null;
   const diagnostics = {
     socketSeen: 0, textFrames: 0, jsonFrames: 0, binaryFrames: 0,
-    welcome: 0, estado: 0, batalha: 0, market: 0,
-    lastType: null, lastMessageAt: 0, lastPublishAt: 0,
+    welcome: 0, estado: 0, batalha: 0, market: 0, field: 0,
+    lastType: null, lastMessageAt: 0, lastPublishAt: 0, marketMessageKeys: [], marketLineKeys: [], fieldMessageKeys: [],
     typeCounts: {}, battleEventKinds: {}, lastMessageKeys: []
   };
   const safeMarketLine = (line) => {
@@ -162,7 +162,7 @@ object GameDataCapture {
       nick: state.nick ?? null, level: state.level,
       coinsBalance: coinData.value, currencySource: coinData.source,
       gold: coinData.value, coins: coinData.value, xpTreinador: Number(state.xp) || 0,
-      activeId: state.activeId, huntSlug: state.huntSlug,
+      activeId: state.activeId, huntSlug: state.huntSlug, outlandTier: state.outlandTier ?? null,
       team, pokemonCount: pokemons.length,
       gameAuto: {
         autoPotion: !!automation.autoPotion, autoRevive: !!automation.autoRevive,
@@ -191,7 +191,7 @@ object GameDataCapture {
         })) : []
       })),
       player: {
-        level: state.level, xp: Number(state.xp) || 0,
+        level: state.level, xp: Number(state.xp) || 0, outlandTier: state.outlandTier ?? null,
         coins: coinData.value, gold: coinData.value,
         activeId: state.activeId, huntSlug: state.huntSlug,
         activePokemon: active, pokemonCount: pokemons.length, pokemons
@@ -265,6 +265,10 @@ object GameDataCapture {
               catalogData = {
                 at: Date.now(),
                 hunts,
+                outlandTiers: Array.isArray(msg.outlandTiers) ? msg.outlandTiers.map(t => ({
+                  id: t.id ?? null, nivel: t.nivel ?? null,
+                  mult: t.mult ?? t.multiplicador ?? null
+                })) : [],
                 bolas: (msg.catalogoBolas ?? []).map(b => ({
                   id: b.id, nome: b.nome, priceGold: Number(b.priceGold) || 0,
                   compravel: !!b.compravel, catchRate: b.catchRate ?? null
@@ -324,16 +328,37 @@ object GameDataCapture {
                 if (ev && ev.k === 'morte' && ev.quem === 'selvagem') kills.push(Date.now());
               }
               publish('batalha');
-            } else if (msg.t === 'market' && Array.isArray(msg.linhas)) {
+            } else if (msg.t === 'market') {
               diagnostics.market++;
-              marketData = {
-                aba: msg.aba || null, pagina: Number(msg.pagina) || 0,
-                total: Number(msg.total) || 0, porPagina: Number(msg.porPagina) || 0,
-                temMais: !!msg.temMais,
-                linhas: msg.linhas.map(safeMarketLine)
-              };
+              diagnostics.marketMessageKeys = Object.keys(msg).slice(0, 30);
+              const incoming = Array.isArray(msg.linhas) ? msg.linhas.map(safeMarketLine) : [];
+              diagnostics.marketLineKeys = incoming[0] ? Object.keys(incoming[0]) : [];
+              if (incoming.length > 0) {
+                const page = Number(msg.pagina) || 0;
+                const sameTab = marketData && marketData.aba === (msg.aba || null);
+                const previous = page > 0 && sameTab ? marketData.linhas : [];
+                const byId = new Map(previous.map((line, index) => [
+                  String(line.id ?? line.pokemonId ?? (line.ficha?.id ?? index)), line
+                ]));
+                incoming.forEach((line, index) => byId.set(
+                  String(line.id ?? line.pokemonId ?? (line.ficha?.id ?? (page + ':' + index))), line
+                ));
+                marketData = {
+                  aba: msg.aba || null, pagina: page,
+                  total: Number(msg.total) || 0, porPagina: Number(msg.porPagina) || 0,
+                  temMais: !!msg.temMais, linhas: [...byId.values()].slice(0, 500),
+                  paginasObservadas: page > 0 && sameTab
+                    ? [...new Set([...(marketData.paginasObservadas || []), page])]
+                    : [page],
+                  atualizadoEm: Date.now()
+                };
+              }
               send({ kind: 'market', status: 'connected', market: marketData,
                 diagnostics: { ...diagnostics }, updatedAt: Date.now() });
+            } else if (msg.t === 'campo' || msg.t === 'campo.init') {
+              diagnostics.field++;
+              diagnostics.fieldMessageKeys = Object.keys(msg).slice(0, 30);
+              publish('field');
             }
           });
         }
