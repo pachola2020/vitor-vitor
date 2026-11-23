@@ -88,7 +88,7 @@ object GameDataCapture {
     socketSeen: 0, textFrames: 0, jsonFrames: 0, binaryFrames: 0,
     welcome: 0, estado: 0, batalha: 0, market: 0, field: 0,
     lastType: null, lastMessageAt: 0, lastPublishAt: 0, marketMessageKeys: [], marketLineKeys: [], fieldMessageKeys: [],
-    typeCounts: {}, battleEventKinds: {}, lastMessageKeys: []
+    typeCounts: {}, battleEventKinds: {}, battleEventKeys: {}, lastMessageKeys: []
   };
   const safeMarketLine = (line) => {
     const f = line && (line.ficha || line.pokemon) ? (line.ficha || line.pokemon) : {};
@@ -388,6 +388,9 @@ object GameDataCapture {
               for (const ev of msg.ev) {
                 if (ev && typeof ev.k === 'string') {
                   diagnostics.battleEventKinds[ev.k] = (diagnostics.battleEventKinds[ev.k] || 0) + 1;
+                  if (!diagnostics.battleEventKeys[ev.k]) {
+                    diagnostics.battleEventKeys[ev.k] = Object.keys(ev).slice(0, 24);
+                  }
                 }
                 if (ev && ev.k === 'morte' && ev.quem === 'selvagem') kills.push(Date.now());
               }
