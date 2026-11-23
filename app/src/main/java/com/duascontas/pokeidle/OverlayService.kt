@@ -702,11 +702,11 @@ open class OverlayService : Service() {
                         val vipUntil = xp?.optJSONObject("loja")?.optLong("vipAte", 0L) ?: 0L
                         val vipActive = vipUntil > System.currentTimeMillis() / 1000L
                         buildString {
-                            append("BÔNUS DE XP\\n")
-                            append("Guilda: ${xp?.optDouble("guildBonusPct", 0.0) ?: 0.0}%\\n")
-                            append("VIP: ${if (vipActive) "ativo" else if (vipUntil > 0) "expirado" else "sem informação"}\\n")
-                            append("Twitch: ${if (twitch?.optBoolean("assistindo", false) == true) "+${twitch.optDouble("pctAtual", 0.0)}%" else "não ativo/sem dado"}\\n")
-                            append("Kick: ${kick?.optDouble("pct", 0.0)?.takeIf { it > 0 }?.let { "+$it%" } ?: "não ativo/sem dado"}\\n")
+                            append("BÔNUS DE XP\n")
+                            append("Guilda: ${xp?.optDouble("guildBonusPct", 0.0) ?: 0.0}%\n")
+                            append("VIP: ${if (vipActive) "ativo" else if (vipUntil > 0) "expirado" else "sem informação"}\n")
+                            append("Twitch: ${if (twitch?.optBoolean("assistindo", false) == true) "+${twitch.optDouble("pctAtual", 0.0)}%" else "não ativo/sem dado"}\n")
+                            append("Kick: ${kick?.optDouble("pct", 0.0)?.takeIf { it > 0 }?.let { "+$it%" } ?: "não ativo/sem dado"}\n")
                             append("Evento: ${xp?.opt("evento")?.toString() ?: "nenhum informado"}")
                         }
                     }
