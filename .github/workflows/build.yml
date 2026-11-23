@@ -26,39 +26,33 @@ jobs:
       # Mantém a mesma chave de assinatura entre builds de teste para permitir
       # atualização por cima sem desinstalar o Assistant.
       - name: Restaurar assinatura estável de teste
+        id: signing-cache
         uses: actions/cache@v4
         with:
           path: ~/.android/debug.keystore
           key: pokeidle-assistant-debug-signing-v1
 
-      - name: Criar assinatura de teste se necessário
+      - name: Exigir a assinatura persistida
         run: |
-          mkdir -p ~/.android
-          if [ ! -f ~/.android/debug.keystore ]; then
-            keytool -genkeypair -v -keystore ~/.android/debug.keystore \
-              -storepass android -alias androiddebugkey -keypass android \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -dname "CN=Android Debug,O=PokeIdle Assistant,C=BR"
+          if [ "${{ steps.signing-cache.outputs.cache-hit }}" != "true" ]; then
+            echo "::error::Cache da assinatura não encontrado. Não gerar outra chave automaticamente."
+            exit 1
           fi
-
-      # Diagnóstico: confirmar que o Gradle usa exatamente a keystore restaurada.
-      - name: Diagnosticar caminho e certificado da assinatura
-        run: |
-          echo "HOME=$HOME"
-          echo "ANDROID_USER_HOME=${ANDROID_USER_HOME:-<unset>}"
-          echo "GRADLE_USER_HOME=${GRADLE_USER_HOME:-<unset>}"
-          java -XshowSettings:properties -version 2>&1 | grep 'user.home'
-          find /home/runner -type f -name debug.keystore -print 2>/dev/null | while read ks; do
-            echo "KEYSTORE_PATH=$ks"
-            keytool -list -v -keystore "$ks" -storepass android -alias androiddebugkey 2>/dev/null | grep -E 'Owner:|SHA256:'
-          done
+          test -f "$HOME/.android/debug.keystore"
+          KEY_CERT=$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey 2>/dev/null | sed -n 's/^[[:space:]]*SHA256: //p' | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          EXPECTED_CERT="21ceceb1e6f17c393a4406b235c7860eddc56187b43e5a60dbb0f216378e23cb"
+          echo "Keystore SHA-256: $KEY_CERT"
+          if [ "$KEY_CERT" != "$EXPECTED_CERT" ]; then
+            echo "::error::A assinatura persistida mudou. Build bloqueado para evitar APK incompatível."
+            exit 1
+          fi
 
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.9
 
       - name: Compilar APK de teste
-        run: gradle testDebugUnitTest lintDebug assembleDebug --no-daemon --stacktrace
+        run: gradle :app:signingReport testDebugUnitTest lintDebug assembleDebug --no-daemon --stacktrace
 
       - name: Conferir certificado efetivo do APK
         run: |
@@ -68,6 +62,15 @@ jobs:
             exit 1
           fi
           "$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk
+          KEY_CERT=$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey 2>/dev/null | sed -n 's/^[[:space:]]*SHA256: //p' | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          APK_CERT=$("$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk | sed -n 's/.*certificate SHA-256 digest: //p' | head -n 1)
+          if [ "$KEY_CERT" != "$APK_CERT" ]; then
+            echo "::error::O APK não foi assinado pela keystore persistida."
+            echo "Keystore: $KEY_CERT"
+            echo "APK: $APK_CERT"
+            exit 1
+          fi
+          echo "Assinatura confirmada: $APK_CERT"
 
       - name: Guardar APK para teste
         uses: actions/upload-artifact@v4
@@ -91,7 +94,7 @@ jobs:
           else
             gh release create "$TAG" app/build/outputs/apk/debug/PokeIdle-Assistant.apk \
               --title "PokeIdle Assistant ${VERSION_NAME}" \
-              --notes "Versão de teste do PokeIdle Assistant. Instalação iniciada pelo botão Verificar atualização no app; o Android ainda solicitará confirmação." \
+              --notes "Migração segura do PokeIdle Assistant: instalada como aplicativo paralelo para preservar a instalação e os dados da versão anterior. Faça login novamente nesta nova instalação. Atualizações futuras usam assinatura persistente verificada no CI." \
               --prerelease --target "$GITHUB_SHA"
           fi
 

@@ -76,7 +76,7 @@ class MainActivity : Activity() {
         brand.addView(label("Assistant", 28f, TEXT, true))
         brand.addView(label("Painel pessoal de acompanhamento", 13f, MUTED))
         top.addView(brand, LinearLayout.LayoutParams(0, -2, 1f))
-        val version = label("TESTE\n0.5.17", 11f, MUTED, true).apply {
+        val version = label("TESTE\n0.5.18", 11f, MUTED, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(10), dp(8), dp(10), dp(8))
             setBackgroundColor(PANEL_ALT)
@@ -190,7 +190,7 @@ class MainActivity : Activity() {
         space(18)
 
         sectionTitle("SOBRE ESTE TESTE")
-        root.addView(label("A versão original continua separada e não é alterada por este teste. As janelas do jogo continuam usando o mecanismo flutuante existente. O dashboard não automatiza ações do jogo.", 12f, MUTED))
+        root.addView(label("A versão original e a instalação anterior do Assistant continuam instaladas e não serão removidas por esta migração. Esta versão usa um pacote separado para preservar os dados antigos; será necessário entrar novamente no jogo nesta instalação. As janelas continuam usando o mecanismo flutuante existente. O dashboard não automatiza ações do jogo.", 12f, MUTED))
         root.addView(actionButton("Verificar atualização", true) {
             checkForAppUpdate()
         })
