@@ -9,12 +9,14 @@ import androidx.webkit.WebViewFeature
 import org.json.JSONObject
 import java.io.File
 import java.nio.charset.StandardCharsets
+import java.util.concurrent.Executors
 
 /**
  * Captura passiva de mensagens recebidas pelo WebSocket oficial do jogo.
  * Não lê cookies/tokens e não envia mensagens ao servidor.
  */
 object GameDataCapture {
+    private val persistenceExecutor = Executors.newSingleThreadExecutor()
     private const val ORIGIN = "https://pokeidle.io"
 
     fun install(context: Context, webView: WebView, accountId: Int) {
@@ -43,7 +45,10 @@ object GameDataCapture {
                     val payload = JSONObject(raw)
                     payload.put("accountId", accountId)
                     payload.put("updatedAt", System.currentTimeMillis())
-                    CaptureStore.save(context, accountId, payload)
+                    val appContext = context.applicationContext
+                    persistenceExecutor.execute {
+                        CaptureStore.save(appContext, accountId, payload)
+                    }
                 } catch (_: Exception) {
                     // Dados inválidos nunca podem interromper o jogo.
                 }
@@ -231,7 +236,8 @@ object GameDataCapture {
     if (!partial) return;
     const { cheio, pokemons, pkMud, pkFora, dexMud, dexFora, ...rest } = partial;
     if (cheio || !state) {
-      state = { ...rest, pokemons: Array.isArray(pokemons) ? pokemons.slice() : [] };
+      state = { ...rest, pokemons: Array.isArray(pokemons)
+        ? pokemons.filter(p => p && typeof p === 'object' && !Array.isArray(p)) : [] };
       return;
     }
     Object.assign(state, rest);
@@ -249,7 +255,7 @@ object GameDataCapture {
         map.set(p.id, { ...(map.get(p.id) || {}), ...p });
       }
     }
-    for (const id of (pkFora || [])) map.delete(id);
+    for (const id of (Array.isArray(pkFora) ? pkFora : [])) map.delete(id);
     state.pokemons = [...map.values()];
     if (dexMud || dexFora) {
       state.pokedex = { ...(state.pokedex || {}), ...(dexMud || {}) };
@@ -294,11 +300,11 @@ object GameDataCapture {
                   id: t.id ?? null, nivel: t.nivel ?? null,
                   mult: t.mult ?? t.multiplicador ?? null
                 })) : [],
-                bolas: (msg.catalogoBolas ?? []).map(b => ({
+                bolas: (Array.isArray(msg.catalogoBolas) ? msg.catalogoBolas : []).map(b => ({
                   id: b.id, nome: b.nome, priceGold: Number(b.priceGold) || 0,
                   compravel: !!b.compravel, catchRate: b.catchRate ?? null
                 })),
-                compraveis: (msg.itensCompraveis ?? []).map(i => ({
+                compraveis: (Array.isArray(msg.itensCompraveis) ? msg.itensCompraveis : []).map(i => ({
                   itemId: i.itemId, preco: Number(i.preco) || 0
                 })),
                 captura: msg.captura ?? null,
@@ -327,11 +333,11 @@ object GameDataCapture {
                   ? msg.catalogoBolas.map(i => ({ id: i.id, nome: i.nome, priceGold: i.priceGold, compravel: !!i.compravel, catchRate: i.catchRate ?? null }))
                   : []
               };
-              merge(msg.estado);
+              merge(msg.estado && typeof msg.estado === 'object' && !Array.isArray(msg.estado) ? msg.estado : {});
               publish('welcome', true);
             } else if (msg.t === 'estado' && state) {
               diagnostics.estado++;
-              merge(msg.estado);
+              merge(msg.estado && typeof msg.estado === 'object' && !Array.isArray(msg.estado) ? msg.estado : null);
               const list = Array.isArray(state.pokemons) ? state.pokemons : [];
               const active = list.find(p => String(p.id) === String(state.activeId));
               if (active) {
