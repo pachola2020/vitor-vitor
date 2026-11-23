@@ -676,7 +676,8 @@ open class OverlayService : Service() {
     private fun showHunterSection(section: String) {
         val output = hunterResult ?: return
         if (section == "hunt") {
-            val requestedAt = System.currentTimeMillis()\n            output.text = "⏳  ANALISANDO HUNTS\n\nO resultado aparecerá aqui automaticamente. Você não precisa trocar de aba."
+            val requestedAt = System.currentTimeMillis()
+            output.text = "⏳  ANALISANDO HUNTS\n\nO resultado aparecerá aqui automaticamente. Você não precisa trocar de aba."
             web?.evaluateJavascript(
                 "window.__pokeIdleRunHuntAnalysis && window.__pokeIdleRunHuntAnalysis()"
             ) { result ->
