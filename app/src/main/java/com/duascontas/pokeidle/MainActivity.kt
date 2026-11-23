@@ -60,7 +60,9 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        if (::permissionStatus.isInitialized) updatePermissionStatus()
+        if (::permissionStatus.isInitialized) {
+            renderDashboard()
+        }
     }
 
     private fun renderDashboard() {
@@ -110,8 +112,8 @@ class MainActivity : Activity() {
         val notice = column().apply {
             setPadding(dp(14), dp(13), dp(14), dp(13))
             setBackgroundColor(PANEL)
-            addView(label("FONTE DE DADOS NÃO CONECTADA", 11f, ACCENT, true))
-            addView(label("O painel está preparado, mas ainda não recebe métricas automaticamente do jogo. Os campos abaixo ficam vazios até validarmos uma forma segura e permitida de leitura.", 13f, TEXT))
+            addView(label(captureSummary().first, 11f, ACCENT, true))
+            addView(label(captureSummary().second, 13f, TEXT))
         }
         root.addView(notice)
         space(12)
@@ -137,7 +139,7 @@ class MainActivity : Activity() {
         addInfoCard("PROGRESSÃO", "XP/h, Gold/h, abates/h e sobrevivência. Comparação por Hunt e por Pokémon.")
         addInfoCard("ECONOMIA", "Recursos negociáveis, vendas concluídas, taxas e lucro líquido estimado.")
         addInfoCard("SHINY HUNT", "Encontros elegíveis, capturas, bônus aplicáveis e probabilidade acumulada.")
-        addInfoCard("HUNT ANALYSER", "Atalho para a ferramenta comunitária já usada no app.")
+        addInfoCard("LEITOR DE HUNT", "Captura passiva de Hunts, Pokémon ativo e dados de equipe. O ranking calculado com e sem AoE será conectado na próxima etapa.")
         space(18)
 
         sectionTitle("JANELAS FLUTUANTES")
@@ -187,6 +189,31 @@ class MainActivity : Activity() {
         root.addView(actionButton("Ver versões do app no GitHub", false) {
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(RELEASES_URL)))
         })
+    }
+
+    private fun captureSummary(): Pair<String, String> {
+        val data = CaptureStore.read(this, selectedAccount)
+            ?: return "AGUARDANDO DADOS DO JOGO" to "Abra a conta selecionada para iniciar a leitura. A captura é instalada antes do WebSocket e não envia comandos ao jogo."
+        val status = data.optString("status", "unknown")
+        if (status == "unsupported") {
+            return "CAPTURA INDISPONÍVEL NESTE WEBVIEW" to "O componente de leitura do Android não está disponível nesta versão. Nenhum dado foi capturado."
+        }
+        val hunts = data.optJSONArray("hunts")?.length() ?: 0
+        val player = data.optJSONObject("player")
+        val active = player?.optJSONObject("activePokemon")
+        val pokemon = active?.optString("nome")?.takeIf { !it.isNullOrBlank() } ?: "não identificado"
+        val hunt = player?.optString("huntSlug")?.takeIf { !it.isNullOrBlank() } ?: "não identificada"
+        val level = player?.optInt("level", 0) ?: 0
+        val stamp = data.optLong("updatedAt", 0L)
+        val age = if (stamp > 0) ((System.currentTimeMillis() - stamp) / 1000).coerceAtLeast(0) else -1
+        val freshness = if (age >= 0) "último pacote há ${age}s" else "sem horário"
+        return if (status == "connected" || data.optString("kind") == "welcome" || data.optString("kind") == "estado") {
+            "DADOS RECEBIDOS · ${accountNames[selectedAccount - 1].uppercase()}" to
+                "$hunts Hunts recebidas · Treinador Nv. $level · Hunt: $hunt · Pokémon ativo: $pokemon · $freshness. Os indicadores por hora ainda aguardam amostragem e validação."
+        } else {
+            "LEITOR INSTALADO · AGUARDANDO WEBSOCKET" to
+                "O leitor foi instalado nesta conta, mas ainda não recebeu o quadro inicial do jogo. $freshness."
+        }
     }
 
     private fun metricCard(title: String): View = column().apply {
