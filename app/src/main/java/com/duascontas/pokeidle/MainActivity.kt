@@ -69,9 +69,21 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun renderDashboard() {
+    private fun renderDashboard(loadSnapshot: Boolean = true) {
         root.removeAllViews()
-        dashboardData = CaptureStore.read(this, selectedAccount)
+        if (loadSnapshot) {
+            dashboardData = null
+            val requestedAccount = selectedAccount
+            Thread {
+                val snapshot = CaptureStore.read(this, requestedAccount)
+                runOnUiThread {
+                    if (!isFinishing && selectedAccount == requestedAccount) {
+                        dashboardData = snapshot
+                        renderDashboard(loadSnapshot = false)
+                    }
+                }
+            }.start()
+        }
 
         val top = row()
         val brand = column()
