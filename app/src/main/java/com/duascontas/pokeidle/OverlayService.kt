@@ -74,6 +74,7 @@ open class OverlayService : Service() {
     private var keyButton: TextView? = null
     private var hunterPanel: LinearLayout? = null
     private var hunterResult: TextView? = null
+    private var hunterPreviousHeight: Int? = null
     private var web: WebView? = null
     private var lp: WindowManager.LayoutParams? = null
     private var wake: PowerManager.WakeLock? = null
@@ -544,8 +545,28 @@ open class OverlayService : Service() {
 
     private fun toggleHunterPanel() {
         val panel = hunterPanel ?: return
-        panel.visibility = if (panel.visibility == View.VISIBLE) View.GONE else View.VISIBLE
-        if (panel.visibility == View.VISIBLE) showHunterSection("overview")
+        if (panel.visibility == View.VISIBLE) {
+            hideHunterPanel()
+            return
+        }
+        val params = lp
+        if (params != null) {
+            hunterPreviousHeight = params.height
+            params.height = maxOf(params.height, dp(340)).coerceAtMost(resources.displayMetrics.heightPixels)
+            frame?.let { wm?.updateViewLayout(it, params) }
+        }
+        panel.visibility = View.VISIBLE
+        showHunterSection("overview")
+    }
+
+    private fun hideHunterPanel() {
+        hunterPanel?.visibility = View.GONE
+        val previous = hunterPreviousHeight ?: return
+        val params = lp ?: return
+        params.height = previous
+        hunterPreviousHeight = null
+        frame?.let { wm?.updateViewLayout(it, params) }
+        savePrefs()
     }
 
     private fun createHunterPanel(): LinearLayout {
@@ -577,7 +598,7 @@ open class OverlayService : Service() {
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
             layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
-            setOnClickListener { panel.visibility = View.GONE }
+            setOnClickListener { hideHunterPanel() }
         }
         header.addView(title)
         header.addView(close)
@@ -725,6 +746,7 @@ open class OverlayService : Service() {
     }
 
     private fun minimize() {
+        hideHunterPanel()
         val p = lp ?: return
         if (minimized) return
         setTyping(false)
