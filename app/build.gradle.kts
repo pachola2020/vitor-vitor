@@ -12,8 +12,8 @@ android {
         applicationId = "com.duascontas.pokeidle.assistant"
         minSdk = 28
         targetSdk = 34
-        versionCode = 12
-        versionName = "0.5.7-analysis-test"
+        versionCode = 13
+        versionName = "0.5.8-analysis-test"
     }
 
     compileOptions {
