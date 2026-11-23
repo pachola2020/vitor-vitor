@@ -331,7 +331,7 @@ class MainActivity : Activity() {
             showDialog("Hunts", "Abra a conta no jogo para receber a lista de Hunts.")
             return
         }
-        val current = data.optJSONObject("player")?.optString("huntSlug") ?: "—"
+        val current = data?.optJSONObject("player")?.optString("huntSlug") ?: "—"
         val lines = buildString {
             appendLine("Treinador Nv. $level · Hunt atual: $current")
             var unlocked = 0
@@ -403,7 +403,7 @@ class MainActivity : Activity() {
         val data = CaptureStore.read(this, selectedAccount)
         val market = data?.optJSONObject("market")
         val linesArray = market?.optJSONArray("linhas")
-        if (linesArray == null || linesArray.length() == 0) {
+        if (market == null || linesArray == null || linesArray.length() == 0) {
             showDialog("Mercado", "Ainda não há registros capturados. Abra a aba ou o histórico desejado no Mercado do jogo; a leitura é passiva e não compra nem anuncia itens.")
             return
         }
@@ -467,6 +467,7 @@ class MainActivity : Activity() {
         val session = data?.optJSONObject("gameSession")
         val player = data?.optJSONObject("player")
         val minutes = m?.optInt("sampleMinutes", 0) ?: 0
+        val sessionMinutes = ((nullableLong(session, "ms") ?: 0L) / 60000L).toInt()
         val value = when (title) {
             "XP DO POKÉMON / H" -> sessionRate(session, "xpPokemon") ?: nullableLong(m, "xpPokemonH") ?: -1L
             "XP DO TREINADOR / H" -> sessionRate(session, "xpTreinador") ?: nullableLong(m, "xpTrainerH") ?: -1L
@@ -489,11 +490,11 @@ class MainActivity : Activity() {
         }
         val detail = when (title) {
             "HP POSITIVO / AMOSTRAS" -> "percentual de amostras com HP > 0; não é chance de sobreviver"
-            "LANÇAMENTOS OBSERVADOS / H" -> "estimativa via redução do estoque em hunt normal; não confirma cada arremesso"
-            "SHINY CAPTURADOS (24H)" -> "eventos de captura shiny observados nesta sessão de leitura"
-            "COINS ATUAIS" -> "saldo da conta"
-            "COINS LÍQUIDOS / H" -> "variação do saldo · ${minutes} min"
-            else -> "janela: ${minutes} min"
+            "GOLD GANHO / H" -> "contador nativo do jogo · sessão de ${sessionMinutes} min"
+            "BOLAS CONSUMIDAS / SESSÃO" -> "contador nativo de bolas usadas na sessão"
+            "SHINIES / SESSÃO" -> "contador nativo de Shinies registrados na sessão"
+            "COINS ATUAIS" -> "saldo atual da conta"
+            else -> "contador de sessão ou amostra do leitor"
         }
         return formatted to detail
     }
