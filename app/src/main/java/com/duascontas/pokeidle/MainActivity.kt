@@ -76,7 +76,7 @@ class MainActivity : Activity() {
         brand.addView(label("Assistant", 28f, TEXT, true))
         brand.addView(label("Painel pessoal de acompanhamento", 13f, MUTED))
         top.addView(brand, LinearLayout.LayoutParams(0, -2, 1f))
-        val version = label("TESTE\n0.5.13", 11f, MUTED, true).apply {
+        val version = label("TESTE\n0.5.14", 11f, MUTED, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(10), dp(8), dp(10), dp(8))
             setBackgroundColor(PANEL_ALT)
@@ -380,44 +380,44 @@ class MainActivity : Activity() {
         }
         val lines = buildString {
             appendLine("Treinador Nv. ${analysis.optInt("nivelTreinador", 0)} · Pokémon analisados: ${analysis.optInt("pokemonAnalisados", 0)}")
-            appendLine("Modelo: estimativa teórica preliminar")
+            appendLine("Estimativas por Pokémon · Hunts liberadas")
             appendLine()
-            for (i in 0 until minOf(pokemon.length(), 12)) {
+            for (i in 0 until minOf(pokemon.length(), 8)) {
                 val p = pokemon.optJSONObject(i) ?: continue
-                appendLine("━━ ${p.optString("nome", "Pokémon")} · Nv. ${p.optInt("level", 0)} ${if (p.optBoolean("tmAoe")) "· AoE equipado" else ""}")
-                val best = p.optJSONObject("melhorXp")
-                if (best == null) {
+                val activeLabel = if (p.optBoolean("ativo")) " · ATIVO" else ""
+                val aoeLabel = if (p.optBoolean("tmAoe")) " · TM AoE equipada" else " · sem TM AoE"
+                appendLine("━━ ${p.optString("nome", "Pokémon")} · Nv. ${p.optInt("level", 0)}$activeLabel$aoeLabel")
+                val noAoe = p.optJSONObject("melhorXpSemAoe")
+                val withAoe = p.optJSONObject("melhorXpComAoe")
+                if (noAoe == null && withAoe == null) {
                     appendLine("  Sem Hunt liberada com dados suficientes.")
                     appendLine()
                     continue
                 }
-                appendLine("  Melhor XP: ${best.optString("nome")} (Nv. ${best.optInt("nivel")})")
-                appendLine("  XP Pokémon/h: ${"%,d".format(best.optLong("xpPokemonH"))}")
-                appendLine("  XP treinador/h: ${"%,d".format(best.optLong("xpTreinadorH"))}")
-                appendLine("  Gold/h: ${"%,d".format(best.optLong("goldH"))}")
-                appendLine("  Abates/h: ${"%,d".format(best.optLong("abatesH"))} · TTK: ${best.optDouble("ttkEstimado", 0.0)} s")
-                appendLine("  AoE hipotético: ${"%,d".format(best.optLong("xpPokemonHAoeHipotetico"))} XP Pokémon/h")
+                if (noAoe != null) {
+                    appendLine("  SEM AoE — ${noAoe.optString("nome")} (Nv. ${noAoe.optInt("nivel")})")
+                    appendLine("    XP Pokémon/h: ${"%,d".format(noAoe.optLong("xpPokemonH"))} · XP treinador/h: ${"%,d".format(noAoe.optLong("xpTreinadorH"))}")
+                    appendLine("    Gold/h: ${"%,d".format(noAoe.optLong("goldH"))} · abates/h: ${"%,d".format(noAoe.optLong("abatesH"))}")
+                }
+                if (withAoe != null) {
+                    val mode = if (p.optBoolean("tmAoe")) "COM AoE (equipada)" else "COM AoE (hipótese se equipar)"
+                    appendLine("  $mode — ${withAoe.optString("nome")} (Nv. ${withAoe.optInt("nivel")})")
+                    appendLine("    XP Pokémon/h: ${"%,d".format(withAoe.optLong("xpPokemonHAoeHipotetico"))} · XP treinador/h: ${"%,d".format(withAoe.optLong("xpTreinadorHAoeHipotetico"))}")
+                    appendLine("    Gold/h: ${"%,d".format(withAoe.optLong("goldHAoeHipotetico"))} · abates/h: ${"%,d".format(withAoe.optLong("abatesHAoeHipotetico"))}")
+                }
                 val goldBest = p.optJSONObject("melhorGold")
-                if (goldBest != null && goldBest.optString("slug") != best.optString("slug")) {
-                    appendLine("  Melhor Gold: ${goldBest.optString("nome")} · ${"%,d".format(goldBest.optLong("goldH"))}/h")
-                }
-                val top = p.optJSONArray("topHunts")
-                if (top != null && top.length() > 1) {
-                    appendLine("  Próximas Hunts:")
-                    for (j in 1 until minOf(top.length(), 4)) {
-                        val h = top.optJSONObject(j) ?: continue
-                        appendLine("    ${j + 1}. ${h.optString("nome")} · ${"%,d".format(h.optLong("xpPokemonH"))} XP/h")
-                    }
-                }
+                if (goldBest != null) appendLine("  Melhor Gold sem AoE: ${goldBest.optString("nome")} · ${"%,d".format(goldBest.optLong("goldH"))}/h")
+                appendLine("  Hunts analisadas: ${p.optInt("huntsAnalisadas", 0)}")
                 appendLine()
             }
-            appendLine("LIMITAÇÕES IMPORTANTES")
-            appendLine("• Catálogo oficial carregado do jogo; fórmula de dano preliminar.")
-            appendLine("• Ritmo de caminhada e densidade ainda usam referência genérica, não geometria medida desta Hunt.")
-            appendLine("• AoE mostra cenário hipotético de 2,2 alvos por golpe; não é medição real.")
-            appendLine("• Não substitui validação em Hunt real. Use para triagem, não como garantia de rendimento.")
+            appendLine("CONFIABILIDADE E LIMITAÇÕES")
+            appendLine("• Sem AoE e com AoE são rankings separados; a tela identifica se a TM está equipada.")
+            appendLine("• AoE usa provisoriamente 2,2 alvos por golpe; a geometria real de cada Hunt ainda não foi medida.")
+            appendLine("• Ritmo de caminhada/spawn é genérico. Dano e TTK são estimativas, não resultados observados.")
+            appendLine("• Poções, mortes, revives e sobrevivência real ainda não entram neste ranking.")
+            appendLine("• Use como triagem inicial; não como promessa de rendimento.")
         }
-        showDialog("Hunt Analyzer · estimativas", lines)
+        showDialog("Hunt Analyzer · comparativo", lines)
     }
 
     private fun showPokemonDetails() {
