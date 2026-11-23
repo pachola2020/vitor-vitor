@@ -19,6 +19,24 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      # Mantém a mesma chave de assinatura entre builds de teste para permitir
+      # atualização por cima sem desinstalar o Assistant.
+      - name: Restaurar assinatura estável de teste
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: pokeidle-assistant-debug-signing-v1
+
+      - name: Criar assinatura de teste se necessário
+        run: |
+          mkdir -p ~/.android
+          if [ ! -f ~/.android/debug.keystore ]; then
+            keytool -genkeypair -v -keystore ~/.android/debug.keystore \
+              -storepass android -alias androiddebugkey -keypass android \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=PokeIdle Assistant,C=BR"
+          fi
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.9
@@ -32,6 +50,18 @@ jobs:
           name: PokeIdle-Assistant-Test-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      - name: Publicar atualização de teste no GitHub Releases
+        if: github.ref == 'refs/heads/assistant-analysis-foundation'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION_NAME=$(grep 'versionName' app/build.gradle.kts | sed -E 's/.*"([^"]+)".*/\\1/' | sed 's/-analysis-test$//')
+          TAG="assistant-v${VERSION_NAME}"
+          gh release create "$TAG" app/build/outputs/apk/debug/app-debug.apk \
+            --title "PokeIdle Assistant ${VERSION_NAME}" \
+            --notes "Versão de teste do PokeIdle Assistant. Instalação iniciada pelo botão Verificar atualização no app; o Android ainda solicitará confirmação." \
+            --prerelease --target "$GITHUB_SHA"
 
       - name: Publicar release (somente main/master)
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
