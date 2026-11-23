@@ -402,17 +402,51 @@ class MainActivity : Activity() {
     }
 
     private fun requestHuntAnalysis() {
+        val requestedAt = System.currentTimeMillis()
+        val account = selectedAccount
+        val progress = AlertDialog.Builder(this)
+            .setTitle("Analisando Hunts")
+            .setMessage("Comparando seus Pokémon com as Hunts liberadas. O resultado aparecerá aqui, sem trocar de aba.")
+            .setNegativeButton("Fechar", null)
+            .create()
+        progress.show()
         val intent = Intent(OverlayService.ACTION_RUN_HUNT_ANALYSIS)
             .setPackage(packageName)
-            .putExtra("accountId", selectedAccount)
+            .putExtra("accountId", account)
         sendBroadcast(intent)
-        Toast.makeText(
-            this,
-            "Solicitação enviada. Mantenha a janela da conta selecionada aberta e consulte o resultado em Hunt Analyzer.",
-            Toast.LENGTH_LONG
-        ).show()
+        pollDashboardHuntAnalysis(account, requestedAt, 0, progress)
     }
 
+    private fun pollDashboardHuntAnalysis(account: Int, requestedAt: Long, attempt: Int, progress: AlertDialog) {
+        if (isFinishing || attempt >= 40 || account != selectedAccount) {
+            if (progress.isShowing) progress.dismiss()
+            if (attempt >= 40) showDialog("Hunt Analyzer", "A análise ainda não terminou. Mantenha a janela da conta aberta e tente consultar novamente.")
+            return
+        }
+        Thread {
+            val snapshot = CaptureStore.read(this, account)
+            runOnUiThread {
+                if (isFinishing || account != selectedAccount) {
+                    if (progress.isShowing) progress.dismiss()
+                    return@runOnUiThread
+                }
+                val analysis = snapshot?.optJSONObject("huntAnalysis")
+                if (analysis != null && analysis.optString("status") == "estimativa_disponivel" &&
+                    analysis.optLong("calculadoEm", 0L) >= requestedAt) {
+                    dashboardData = snapshot
+                    if (progress.isShowing) progress.dismiss()
+                    showHuntAnalyzerDetails()
+                } else if (analysis?.optString("status") == "erro") {
+                    if (progress.isShowing) progress.dismiss()
+                    showDialog("Hunt Analyzer", analysis.optString("message", "Não foi possível concluir a análise."))
+                } else {
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(
+                        { pollDashboardHuntAnalysis(account, requestedAt, attempt + 1, progress) }, 1500
+                    )
+                }
+            }
+        }.start()
+    }
     private fun showHuntAnalyzerDetails() {
         val data = dashboardData
         val analysis = data?.optJSONObject("huntAnalysis")
