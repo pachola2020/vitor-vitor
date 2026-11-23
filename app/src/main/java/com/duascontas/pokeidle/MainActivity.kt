@@ -428,7 +428,7 @@ class MainActivity : Activity() {
 
     private fun openHuntAnalyzer() {
         val ready = dashboardData?.optJSONObject("huntAnalysis")?.optString("status") == "estimativa_disponivel"
-        if (ready) dashboardScroll.post { dashboardScroll.fullScroll(View.FOCUS_DOWN) } else requestHuntAnalysis()
+        if (ready) dashboardScroll.post { root.findViewWithTag<View>("hunt-analysis-result")?.let { dashboardScroll.smoothScrollTo(0, it.top) } } else requestHuntAnalysis()
     }
 
     private fun requestHuntAnalysis() {
@@ -441,6 +441,7 @@ class MainActivity : Activity() {
             .setNegativeButton("Fechar", null)
             .create()
         progress.show()
+        progress.setOnDismissListener { if (generation == huntPollGeneration) huntPollGeneration++ }
         val intent = Intent(OverlayService.ACTION_RUN_HUNT_ANALYSIS)
             .setPackage(packageName)
             .putExtra("accountId", account)
@@ -467,7 +468,7 @@ class MainActivity : Activity() {
                     dashboardData = snapshot
                     if (progress.isShowing) progress.dismiss()
                     renderDashboard(loadSnapshot = false)
-                    dashboardScroll.post { dashboardScroll.fullScroll(View.FOCUS_DOWN) }
+                    dashboardScroll.post { root.findViewWithTag<View>("hunt-analysis-result")?.let { dashboardScroll.smoothScrollTo(0, it.top) } }
                 } else if (analysis?.optString("status") == "erro") {
                     if (progress.isShowing) progress.dismiss()
                     showDialog("Hunt Analyzer", analysis.optString("message", "Não foi possível concluir a análise."))
@@ -483,6 +484,7 @@ class MainActivity : Activity() {
         val pokemon = analysis.optJSONArray("pokemon") ?: return
         if (pokemon.length() == 0) return
         val header = column().apply {
+            tag = "hunt-analysis-result"
             setPadding(dp(14), dp(13), dp(14), dp(13))
             background = roundedPanel(PANEL_ALT, 14)
             addView(label("RESULTADO DISPONÍVEL", 10f, ACCENT, true))
