@@ -204,7 +204,8 @@ class MainActivity : Activity() {
         val pokemon = active?.optString("nome")?.takeIf { !it.isNullOrBlank() } ?: "não identificado"
         val teamCount = player?.optJSONArray("team")?.length() ?: 0
         val catalog = data.optJSONObject("catalog")
-        val combatReady = catalog?.optJSONObject("combate")?.has("tabelaTipos") == true
+        val typeTableSize = catalog?.optJSONObject("combate")?.optJSONObject("tabelaTipos")?.length() ?: 0
+        val combatReady = typeTableSize > 0
         val hunt = player?.optString("huntSlug")?.takeIf { !it.isNullOrBlank() } ?: "não identificada"
         val level = player?.optInt("level", 0) ?: 0
         val stamp = data.optLong("updatedAt", 0L)
