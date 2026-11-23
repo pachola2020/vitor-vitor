@@ -16,8 +16,8 @@ android {
         applicationId = "com.duascontas.pokeidle.assistant.v2"
         minSdk = 28
         targetSdk = 34
-        versionCode = 38
-        versionName = "0.5.33-cooperative-hunt-candidate" // Yield between Hunt batches; conservative AoE assumption
+        versionCode = 39
+        versionName = "0.5.34-background-cookie-candidate" // Move blocking cookie persistence off the UI thread
     }
 
     signingConfigs {

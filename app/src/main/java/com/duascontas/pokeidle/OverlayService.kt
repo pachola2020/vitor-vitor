@@ -95,14 +95,24 @@ open class OverlayService : Service() {
     private val hunterQueryExecutor = Executors.newSingleThreadExecutor { task ->
         Thread(task, "HunterQuery").apply { isDaemon = true }
     }
+    // CookieManager.flush() pode fazer I/O síncrono; nunca executá-lo na thread da interface.
+    private val cookieFlushExecutor = Executors.newSingleThreadExecutor { task ->
+        Thread(task, "CookiePersistence").apply { isDaemon = true }
+    }
 
     private val flusher = object : Runnable {
         override fun run() {
             try {
-                CookieManager.getInstance().flush()
-            } catch (e: Exception) {
+                cookieFlushExecutor.execute {
+                    try {
+                        CookieManager.getInstance().flush()
+                    } catch (_: Exception) {
+                    }
+                }
+            } catch (_: Exception) {
             }
-            handler.postDelayed(this, 15000)
+            // O WebView já sincroniza cookies automaticamente; a gravação explícita é apenas uma salvaguarda.
+            handler.postDelayed(this, 120000)
         }
     }
 
@@ -178,6 +188,16 @@ open class OverlayService : Service() {
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
         hunterQueryExecutor.shutdownNow()
+        try {
+            cookieFlushExecutor.execute {
+                try {
+                    CookieManager.getInstance().flush()
+                } catch (_: Exception) {
+                }
+            }
+        } catch (_: Exception) {
+        }
+        cookieFlushExecutor.shutdown()
         rendererRecoveryRunnable = null
         rendererHealthCheck = null
         rendererRecoveryPending = false
