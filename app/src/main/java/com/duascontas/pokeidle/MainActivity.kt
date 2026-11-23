@@ -232,20 +232,19 @@ class MainActivity : Activity() {
         val data = CaptureStore.read(this, selectedAccount)
         val m = data?.optJSONObject("measurements")
         val minutes = m?.optInt("sampleMinutes", 0) ?: 0
-        val pair = when (title) {
-            "XP DO POKÉMON / H" -> m?.optLong("xpPokemonH", -1L) ?: -1L to "XP medido"
-            "XP DO TREINADOR / H" -> m?.optLong("xpTrainerH", -1L) ?: -1L to "XP medido"
-            "ABATES / H" -> m?.optLong("killsH", -1L) ?: -1L to "abates observados"
-            "SOBREVIVÊNCIA" -> m?.optInt("survivalPct", -1) ?: -1 to "amostras com HP > 0"
-            else -> -1L to "aguardando medição"
+        val value = when (title) {
+            "XP DO POKÉMON / H" -> m?.optLong("xpPokemonH", -1L) ?: -1L
+            "XP DO TREINADOR / H" -> m?.optLong("xpTrainerH", -1L) ?: -1L
+            "ABATES / H" -> m?.optLong("killsH", -1L) ?: -1L
+            "SOBREVIVÊNCIA" -> (m?.optInt("survivalPct", -1) ?: -1).toLong()
+            else -> -1L
         }
-        val value = pair.first
         if (value < 0) {
-            val detail = if (minutes > 0) "coletando · ${minutes} min" else pair.second
+            val detail = if (minutes > 0) "coletando · ${minutes} min" else "aguardando medição"
             return "—" to detail
         }
         val formatted = if (title == "SOBREVIVÊNCIA") "${value}%" else "%,d".format(value)
-        val detail = if (title.contains("XP / H") || title == "ABATES / H") "janela: ${minutes} min" else pair.second
+        val detail = if (title == "SOBREVIVÊNCIA") "amostras com HP > 0" else "janela: ${minutes} min"
         return formatted to detail
     }
 
