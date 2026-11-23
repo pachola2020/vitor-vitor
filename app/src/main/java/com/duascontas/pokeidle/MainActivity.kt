@@ -317,8 +317,8 @@ class MainActivity : Activity() {
             appendLine("Última atualização: ${data.optLong("updatedAt", 0L)}")
             appendLine()
             appendLine("Dados estruturados:")
-            append(data.toString(2).take(12000))
-            if (data.toString().length > 12000) appendLine("\n… conteúdo truncado para manter a tela responsiva.")
+            append(data.toString(2).take(4000))
+            if (data.toString().length > 4000) appendLine("\n… conteúdo técnico truncado em 4.000 caracteres. Os resumos continuam disponíveis nas telas principais.")
         }
         showDialog("Diagnóstico técnico", details)
     }
@@ -519,8 +519,18 @@ class MainActivity : Activity() {
         val seen = nullableLong(session, "shiniesVistos")
         val captured = nullableLong(session, "shinies")
         val diag = data?.optJSONObject("diagnostics")
-        val battleKinds = diag?.optJSONObject("battleEventKinds")?.toString() ?: "{}"
-        val battleSamples = diag?.optJSONObject("battleEventSamples")?.toString() ?: "{}"
+        val eventKinds = diag?.optJSONObject("battleEventKinds")
+        var eventTypeCount = 0
+        var observedEventCount = 0
+        eventKinds?.keys()?.forEach { key ->
+            eventTypeCount++
+            observedEventCount += eventKinds.optInt(key, 0).coerceAtLeast(0)
+        }
+        val eventSamples = diag?.optJSONObject("battleEventSamples")
+        var sampleCount = 0
+        eventSamples?.keys()?.forEach { key ->
+            sampleCount += eventSamples.optJSONArray(key)?.length() ?: 0
+        }
         val sessionAvailable = diag?.optBoolean("gameSessionAvailable", false) == true
         val lines = buildString {
             appendLine("Bolas consumidas na sessão: ${balls ?: "aguardando"}")
@@ -528,12 +538,12 @@ class MainActivity : Activity() {
             appendLine("Shinies registrados (contador do jogo): ${captured ?: "aguardando"}")
             appendLine("Contador local da sessão encontrado: ${if (sessionAvailable) "sim" else "não"}")
             appendLine()
-            appendLine("Eventos de batalha observados: $battleKinds")
-            appendLine("Amostras sanitizadas de eventos: $battleSamples")
+            appendLine("Eventos de batalha observados: $observedEventCount em $eventTypeCount tipos")
+            appendLine("Amostras técnicas guardadas: $sampleCount (disponíveis no diagnóstico)")
             appendLine()
-            appendLine("Regra oficial: chance-base de 1 em 24.000 por lançamento elegível; falha também consome a tentativa. A Outland não gera Shiny.")
+            appendLine("Regra do PokeIdle.io: chance-base de 1 em 24.000 por lançamento elegível; a Outland não gera Shiny.")
             appendLine()
-            append("A probabilidade acumulada continua bloqueada até identificar o evento real de lançamento e confirmar espécie com forma Shiny, área elegível e bônus ativos. O contador total de bolas não é suficiente.")
+            append("A probabilidade acumulada continua indisponível até identificar o evento real de lançamento e confirmar espécie com forma Shiny, área elegível e bônus ativos. O contador total de bolas não é suficiente.")
         }
         showDialog("Shiny Hunt", lines)
     }
