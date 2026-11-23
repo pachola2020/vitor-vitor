@@ -12,8 +12,8 @@ android {
         applicationId = "com.duascontas.pokeidle.assistant.v2"
         minSdk = 28
         targetSdk = 34
-        versionCode = 31
-        versionName = "0.5.26-hunter-panel-preview"
+        versionCode = 32
+        versionName = "0.5.27-hunter-companion-base"
     }
 
     signingConfigs {
