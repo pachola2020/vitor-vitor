@@ -293,20 +293,34 @@ object GameDataCapture {
       if (!response.ok) throw new Error(path + ' HTTP ' + response.status);
       return response.json();
     };
-    const [cr, newer, outland, overrides, analyser, reward, cooldown] = await Promise.all([
+    const optionalModule = (path) => import(base + path).catch(() => null);
+    const [cr, newer, outland, overrides, analyser, reward, cooldown,
+      planilhas, outlandMod, baseOutland, evolucoes, especiais, golpesOrre, megas, alias, tm] = await Promise.all([
       getJson('assets/creatures.json'),
       getJson('assets/creatures-novos.json').catch(() => null),
       getJson('assets/creatures-outland-novos.json').catch(() => null),
       getJson('assets/creatures-audit-overrides.json').catch(() => null),
       import(base + 'hunt-analyser.mjs'),
       import(base + 'shared/recompensa-hunt.mjs'),
-      import(base + 'shared/cooldown-golpes.mjs')
+      import(base + 'shared/cooldown-golpes.mjs'),
+      optionalModule('shared/golpes-planilhas.mjs'),
+      optionalModule('shared/outland.mjs'),
+      optionalModule('shared/herdar-base-outland.mjs'),
+      optionalModule('shared/evolucoes-cruzadas.mjs'),
+      optionalModule('shared/golpes-especiais.mjs'),
+      optionalModule('shared/herdar-golpes-orre.mjs'),
+      optionalModule('shared/megas.mjs'),
+      optionalModule('shared/alias-item.mjs'),
+      optionalModule('shared/tm-elemental.mjs')
     ]);
     const list = [
       ...(Array.isArray(cr?.creatures) ? cr.creatures : []),
       ...(Array.isArray(newer?.creatures) ? newer.creatures : []),
       ...(Array.isArray(outland?.creatures) ? outland.creatures : [])
     ];
+    if (outlandMod?.aplicarRemapOutlandLista) {
+      try { outlandMod.aplicarRemapOutlandLista(list); } catch (_) {}
+    }
     const byId = new Map(list.filter(x => x && x.pokeId != null).map(x => [String(x.pokeId), x]));
     for (const item of (overrides?.overrides || [])) {
       const target = byId.get(String(item?.pokeId));
@@ -314,11 +328,36 @@ object GameDataCapture {
       for (const key of ['baseHp','baseAtk','baseDef','baseSpAtk','baseSpDef','baseSpeed']) {
         if (Number.isFinite(Number(item[key]))) target[key] = Number(item[key]);
       }
-      if (Array.isArray(item.attacks)) target.attacks = item.attacks;
+      if (Array.isArray(item.attacks)) target.attacks = item.attacks.map(a => ({ ...a }));
     }
-    if (!byId.size) throw new Error('Catálogo oficial sem espécies identificáveis.');
-    analysisCatalog = byId;
-    analysisModules = { analyser, reward, cooldown };
+    if (planilhas?.aplicarGolpesDasPlanilhas) {
+      try { planilhas.aplicarGolpesDasPlanilhas(id => list.filter(x => x.pokeId === id)); } catch (_) {}
+    }
+    if (baseOutland?.herdarBaseOutland) {
+      try { baseOutland.herdarBaseOutland(list); } catch (_) {}
+    }
+    if (evolucoes?.aplicarCadeiasTruncadas) {
+      try { evolucoes.aplicarCadeiasTruncadas(list); } catch (_) {}
+      try { evolucoes.normalizarEvolveLevel600?.(list); } catch (_) {}
+    }
+    for (const creature of list) {
+      if (!creature || (outlandMod?.isEspelhoFantasmaPokeId?.(creature.pokeId))) continue;
+      if (alias?.resolverNomeItem && Array.isArray(creature.loot)) {
+        for (const loot of creature.loot) {
+          try { loot.name = alias.resolverNomeItem(loot.name); } catch (_) {}
+        }
+      }
+      try { especiais?.injetarGolpesEspeciais?.(creature); } catch (_) {}
+    }
+    try { golpesOrre?.herdarGolpesOrre?.(list); } catch (_) {}
+    try {
+      const megaSpecies = megas?.criarEspeciesMega?.(list) || [];
+      for (const mega of megaSpecies) if (mega?.pokeId != null) list.push(mega);
+    } catch (_) {}
+    const finalMap = new Map(list.filter(x => x && x.pokeId != null).map(x => [String(x.pokeId), x]));
+    if (!finalMap.size) throw new Error('Catálogo oficial sem espécies identificáveis.');
+    analysisCatalog = finalMap;
+    analysisModules = { analyser, reward, cooldown, tm };
   };
 
   const typeEffect = (moveType, defender, table, analyser) => {
@@ -356,6 +395,12 @@ object GameDataCapture {
     const attacks = (Array.isArray(species.attacks) ? species.attacks : [])
       .filter(a => Number(a.learnLevel ?? 1) <= level && Number(a.power) > 0)
       .map(a => ({ ...a, cd: speedCd(Number(a.cooldownMs) || 2000) }));
+    if (pk.tmElemental && analysisModules.tm?.golpeTmElemental) {
+      try {
+        const tmMove = analysisModules.tm.golpeTmElemental(pk.tmElemental);
+        if (tmMove) attacks.push({ ...tmMove, cd: speedCd(Number(tmMove.cooldownMs) || 60000) });
+      } catch (_) {}
+    }
     if (!attacks.length) attacks.push({ name: 'Investida (estimada)', type: pkTypes[0], power: 30, category: 'PHYSICAL', cd: speedCd(2000) });
     const trainerLevel = Number(state?.level) || 1;
     const unlocked = hunts.filter(h => Number(h.nivel) <= trainerLevel && Array.isArray(h.especies) && h.especies.length);
