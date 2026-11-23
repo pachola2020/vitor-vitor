@@ -374,34 +374,34 @@ class MainActivity : Activity() {
             return
         }
         val lines = buildString {
-            appendLine("Treinador Nv. \${analysis.optInt("nivelTreinador", 0)} · Pokémon analisados: \${analysis.optInt("pokemonAnalisados", 0)}")
+            appendLine("Treinador Nv. ${analysis.optInt("nivelTreinador", 0)} · Pokémon analisados: ${analysis.optInt("pokemonAnalisados", 0)}")
             appendLine("Modelo: estimativa teórica preliminar")
             appendLine()
             for (i in 0 until minOf(pokemon.length(), 12)) {
                 val p = pokemon.optJSONObject(i) ?: continue
-                appendLine("━━ \${p.optString("nome", "Pokémon")} · Nv. \${p.optInt("level", 0)} \${if (p.optBoolean("tmAoe")) "· AoE equipado" else ""}")
+                appendLine("━━ ${p.optString("nome", "Pokémon")} · Nv. ${p.optInt("level", 0)} ${if (p.optBoolean("tmAoe")) "· AoE equipado" else ""}")
                 val best = p.optJSONObject("melhorXp")
                 if (best == null) {
                     appendLine("  Sem Hunt liberada com dados suficientes.")
                     appendLine()
                     continue
                 }
-                appendLine("  Melhor XP: \${best.optString("nome")} (Nv. \${best.optInt("nivel")})")
-                appendLine("  XP Pokémon/h: \${"%,d".format(best.optLong("xpPokemonH"))}")
-                appendLine("  XP treinador/h: \${"%,d".format(best.optLong("xpTreinadorH"))}")
-                appendLine("  Gold/h: \${"%,d".format(best.optLong("goldH"))}")
-                appendLine("  Abates/h: \${"%,d".format(best.optLong("abatesH"))} · TTK: \${best.optDouble("ttkEstimado", 0.0)} s")
-                appendLine("  AoE hipotético: \${"%,d".format(best.optLong("xpPokemonHAoeHipotetico"))} XP Pokémon/h")
+                appendLine("  Melhor XP: ${best.optString("nome")} (Nv. ${best.optInt("nivel")})")
+                appendLine("  XP Pokémon/h: ${"%,d".format(best.optLong("xpPokemonH"))}")
+                appendLine("  XP treinador/h: ${"%,d".format(best.optLong("xpTreinadorH"))}")
+                appendLine("  Gold/h: ${"%,d".format(best.optLong("goldH"))}")
+                appendLine("  Abates/h: ${"%,d".format(best.optLong("abatesH"))} · TTK: ${best.optDouble("ttkEstimado", 0.0)} s")
+                appendLine("  AoE hipotético: ${"%,d".format(best.optLong("xpPokemonHAoeHipotetico"))} XP Pokémon/h")
                 val goldBest = p.optJSONObject("melhorGold")
                 if (goldBest != null && goldBest.optString("slug") != best.optString("slug")) {
-                    appendLine("  Melhor Gold: \${goldBest.optString("nome")} · \${"%,d".format(goldBest.optLong("goldH"))}/h")
+                    appendLine("  Melhor Gold: ${goldBest.optString("nome")} · ${"%,d".format(goldBest.optLong("goldH"))}/h")
                 }
                 val top = p.optJSONArray("topHunts")
                 if (top != null && top.length() > 1) {
                     appendLine("  Próximas Hunts:")
                     for (j in 1 until minOf(top.length(), 4)) {
                         val h = top.optJSONObject(j) ?: continue
-                        appendLine("    \${j + 1}. \${h.optString("nome")} · \${"%,d".format(h.optLong("xpPokemonH"))} XP/h")
+                        appendLine("    ${j + 1}. ${h.optString("nome")} · ${"%,d".format(h.optLong("xpPokemonH"))} XP/h")
                     }
                 }
                 appendLine()
