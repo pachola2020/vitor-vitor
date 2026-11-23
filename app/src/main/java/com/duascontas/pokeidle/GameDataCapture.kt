@@ -451,10 +451,12 @@ object GameDataCapture {
         if (bestDps <= 0) continue;
         ttk += weight * enemyHp / bestDps;
         try {
-          xpPerKill += weight * Number(reward.xpPorDerrota(hunt, enemyLevel, enemy));
+          const xpValue = Number(reward.xpPorDerrota(hunt, enemyLevel, enemy));
+          if (Number.isFinite(xpValue) && xpValue >= 0) xpPerKill += weight * xpValue;
         } catch (_) {}
         try {
-          goldPerKill += weight * Number(reward.ouroPorDerrotaHunt(hunt, enemyLevel, enemy, lootBonus));
+          const goldValue = Number(reward.ouroPorDerrotaHunt(hunt, enemyLevel, enemy, lootBonus));
+          if (Number.isFinite(goldValue) && goldValue >= 0) goldPerKill += weight * goldValue;
         } catch (_) {}
       }
       if (!Number.isFinite(ttk) || ttk <= 0) continue;
