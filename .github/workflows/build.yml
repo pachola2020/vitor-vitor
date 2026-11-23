@@ -94,7 +94,7 @@ jobs:
           else
             gh release create "$TAG" app/build/outputs/apk/debug/PokeIdle-Assistant.apk \
               --title "PokeIdle Assistant ${VERSION_NAME}" \
-              --notes "Migração segura do PokeIdle Assistant: instalada como aplicativo paralelo para preservar a instalação e os dados da versão anterior. Faça login novamente nesta nova instalação. Atualizações futuras usam assinatura persistente verificada no CI." \
+              --notes-file CHANGELOG.md \
               --prerelease --target "$GITHUB_SHA"
           fi
 
