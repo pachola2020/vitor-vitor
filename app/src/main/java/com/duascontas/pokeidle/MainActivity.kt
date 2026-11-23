@@ -86,6 +86,29 @@ class MainActivity : Activity() {
         }
         top.addView(version)
         root.addView(top)
+        space(16)
+
+        val hunterHero = column().apply {
+            setPadding(dp(16), dp(15), dp(16), dp(15))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(0xFF244653.toInt(), 0xFF1B2937.toInt(), 0xFF1B2430.toInt())
+            ).apply {
+                cornerRadius = dp(18).toFloat()
+                setStroke(dp(1), 0xFF426878.toInt())
+            }
+            addView(label("✦  HUNTER", 12f, 0xFF8DE0D1.toInt(), true))
+            addView(label("Seu companion durante o jogo", 19f, TEXT, true))
+            addView(label("Consultas rápidas de Shiny, bônus de XP e Hunts. O processamento pesado só começa quando você pedir.", 12f, 0xFFD2DCE5.toInt()))
+            addView(actionButton("Abrir jogo com Hunter", true) {
+                startAccount(selectedAccount)
+            }.apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(44)
+                ).apply { topMargin = dp(10) }
+            })
+        }
+        root.addView(hunterHero)
         space(18)
 
         sectionTitle("CONTAS")
@@ -114,11 +137,12 @@ class MainActivity : Activity() {
         space(18)
 
         sectionTitle("VISÃO GERAL")
+        val summary = captureSummary()
         val notice = column().apply {
             setPadding(dp(14), dp(13), dp(14), dp(13))
             background = roundedPanel(PANEL)
-            addView(label(captureSummary().first, 11f, ACCENT, true))
-            addView(label(captureSummary().second, 13f, TEXT))
+            addView(label(summary.first, 11f, ACCENT, true))
+            addView(label(summary.second, 13f, TEXT))
         }
         root.addView(notice)
         root.addView(actionButton("Ver diagnóstico técnico", false) { showCaptureDiagnostics() })
@@ -685,6 +709,7 @@ class MainActivity : Activity() {
     private fun roundedPanel(color: Int, radiusDp: Int = 16) = GradientDrawable().apply {
         setColor(color)
         cornerRadius = dp(radiusDp).toFloat()
+        setStroke(dp(1), 0xFF2A3948.toInt())
     }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
