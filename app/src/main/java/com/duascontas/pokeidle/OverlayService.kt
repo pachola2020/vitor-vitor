@@ -700,7 +700,6 @@ open class OverlayService : Service() {
                         val twitch = xp?.optJSONObject("twitch")
                         val kick = xp?.optJSONObject("kick")
                         val vipUntil = xp?.optJSONObject("loja")?.optLong("vipAte", 0L) ?: 0L
-                        val vipActive = vipUntil > System.currentTimeMillis() / 1000L
                         buildString {
                             append("BÔNUS DE XP\n")
                             append("Guilda: ${xp?.optDouble("guildBonusPct", 0.0) ?: 0.0}%\n")
