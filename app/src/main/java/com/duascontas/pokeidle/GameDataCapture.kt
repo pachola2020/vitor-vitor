@@ -159,8 +159,8 @@ object GameDataCapture {
           nome: String(c?.nome ?? '—').slice(0, 40),
           level: Number(c?.level) || 0,
           shiny: !!c?.shiny,
-          speciesId: c?.speciesId ?? null,
-          quality: c?.quality ?? null,
+          speciesId: ['string', 'number'].includes(typeof c?.speciesId) ? c.speciesId : null,
+          quality: ['string', 'number'].includes(typeof c?.quality) ? c.quality : null,
           ivTotal: Number.isFinite(ivs) ? ivs : null
         };
       });
