@@ -279,7 +279,18 @@ class MainActivity : Activity() {
         val player = data.optJSONObject("player")
         val hunts = data.optJSONArray("hunts")?.length() ?: 0
         val level = player?.optInt("level", 0) ?: 0
-        val pokemon = player?.optJSONObject("activePokemon")?.optString("nome")?.takeIf { !it.isNullOrBlank() } ?: "não identificado"
+        val pokemonList = player?.optJSONArray("pokemons")
+        val activeId = player?.opt("activeId")?.toString()
+        var pokemon = "não identificado"
+        if (pokemonList != null && activeId != null) {
+            for (i in 0 until pokemonList.length()) {
+                val candidate = pokemonList.optJSONObject(i) ?: continue
+                if (candidate.opt("id")?.toString() == activeId) {
+                    pokemon = candidate.optString("nome", "não identificado")
+                    break
+                }
+            }
+        }
         val hunt = player?.optString("huntSlug")?.takeIf { !it.isNullOrBlank() } ?: "não identificada"
         val stamp = data.optLong("updatedAt", 0L)
         val age = if (stamp > 0) ((System.currentTimeMillis() - stamp) / 1000).coerceAtLeast(0) else -1
