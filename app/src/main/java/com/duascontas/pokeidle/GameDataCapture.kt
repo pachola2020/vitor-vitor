@@ -991,8 +991,9 @@ object CaptureStore {
 
     fun read(context: Context, accountId: Int): JSONObject? {
         return try {
-            val f = file(context, accountId)
-            if (f.exists()) JSONObject(f.readText(StandardCharsets.UTF_8)) else null
+            AtomicFile(file(context, accountId)).openRead().use { input ->
+                JSONObject(input.readBytes().toString(StandardCharsets.UTF_8))
+            }
         } catch (_: Exception) {
             null
         }
