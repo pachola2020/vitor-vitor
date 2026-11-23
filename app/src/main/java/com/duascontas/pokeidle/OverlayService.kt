@@ -104,7 +104,7 @@ open class OverlayService : Service() {
                 ACTION_RELOAD_ALL -> reloadOrRecover()
                 ACTION_CLOSE_ALL -> stopSelf()
                 ACTION_RUN_HUNT_ANALYSIS -> {
-                    val requestedAccount = intent.getIntExtra("accountId", -1)
+                    val requestedAccount = intent?.getIntExtra("accountId", -1) ?: -1
                     if (!isTool && requestedAccount == accountId) {
                         web?.evaluateJavascript(
                             "window.__pokeIdleRunHuntAnalysis && window.__pokeIdleRunHuntAnalysis()",
