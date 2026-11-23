@@ -76,7 +76,7 @@ class MainActivity : Activity() {
         brand.addView(label("Assistant", 28f, TEXT, true))
         brand.addView(label("Painel pessoal de acompanhamento", 13f, MUTED))
         top.addView(brand, LinearLayout.LayoutParams(0, -2, 1f))
-        val version = label("TESTE\n0.5.4", 11f, MUTED, true).apply {
+        val version = label("TESTE\n0.5.5", 11f, MUTED, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(10), dp(8), dp(10), dp(8))
             setBackgroundColor(PANEL_ALT)
@@ -221,6 +221,10 @@ class MainActivity : Activity() {
         val status = data.optString("status", "unknown")
         if (status == "unsupported") {
             return "CAPTURA INDISPONÍVEL NESTE WEBVIEW" to "O componente de leitura do Android não está disponível nesta versão. Nenhum dado foi capturado."
+        }
+        if (status == "capture_error") {
+            val error = data.optString("error", "falha desconhecida")
+            return "LEITOR NÃO INICIALIZADO" to "A captura passiva encontrou uma falha ($error). O jogo continua independente; tente fechar e reabrir somente esta janela."
         }
         val hunts = data.optJSONArray("hunts")?.length() ?: 0
         val player = data.optJSONObject("player")
