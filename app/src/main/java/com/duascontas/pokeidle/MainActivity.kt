@@ -812,7 +812,15 @@ class MainActivity : Activity() {
                         "bridge_indisponivel" -> "O leitor da página ainda não está ativo. Reabra a janela desta conta e aguarde o jogo carregar."
                         else -> "A janela recebeu o pedido, mas não conseguiu agendar a análise (" + receipt.optString("reason", "motivo não informado") + ")."
                     }
-                    showDialog("Hunt Analyzer · não iniciado", reason)
+                    val details = receipt.optJSONObject("details")
+                    val evidence = if (details != null) {
+                        "\n\nDiagnóstico da janela: estado=" + details.optBoolean("hasState") +
+                            " · Pokémon=" + details.optInt("pokemonCount") +
+                            " · Pokémon com stats=" + details.optInt("pokemonWithStats") +
+                            " · Hunts=" + details.optInt("huntsCount") +
+                            " · catálogo=" + details.optBoolean("catalogReady")
+                    } else ""
+                    showDialog("Hunt Analyzer · não iniciado", reason + evidence)
                     return@post
                 }
                 val analysis = snapshot?.optJSONObject("huntAnalysis")
