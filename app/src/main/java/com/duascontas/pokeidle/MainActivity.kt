@@ -202,6 +202,9 @@ class MainActivity : Activity() {
         val player = data.optJSONObject("player")
         val active = player?.optJSONObject("activePokemon")
         val pokemon = active?.optString("nome")?.takeIf { !it.isNullOrBlank() } ?: "não identificado"
+        val teamCount = player?.optJSONArray("team")?.length() ?: 0
+        val catalog = data.optJSONObject("catalog")
+        val combatReady = catalog?.optJSONObject("combate")?.has("tabelaTipos") == true
         val hunt = player?.optString("huntSlug")?.takeIf { !it.isNullOrBlank() } ?: "não identificada"
         val level = player?.optInt("level", 0) ?: 0
         val stamp = data.optLong("updatedAt", 0L)
@@ -218,7 +221,7 @@ class MainActivity : Activity() {
         val diagnosticText = " · Protocolo: $frames mensagens JSON, welcome $welcomeCount, estado $estadoCount, última: $lastType"
         return if (player != null && hunts > 0) {
             "DADOS RECEBIDOS · ${accountNames[selectedAccount - 1].uppercase()}" to
-                "$hunts Hunts recebidas · Treinador Nv. $level · Hunt: $hunt · Pokémon ativo: $pokemon$marketText$diagnosticText · $freshness. Captura observacional; ranking comparativo ainda não está integrado."
+                "$hunts Hunts recebidas · Equipe: $teamCount Pokémon · Catálogo de combate: ${if (combatReady) "recebido" else "incompleto"} · Treinador Nv. $level · Hunt: $hunt · Pokémon ativo: $pokemon$marketText$diagnosticText · $freshness. Captura observacional; ranking comparativo ainda não está integrado."
         } else if (status == "connected") {
             "WEBSOCKET CONECTADO · AGUARDANDO QUADRO INICIAL" to
                 "A conexão abriu, mas ainda não chegou o quadro inicial. $diagnosticText · $freshness."
