@@ -120,8 +120,9 @@ class MainActivity : Activity() {
 
         val metricRows = listOf(
             listOf("XP DO POKÉMON / H", "XP DO TREINADOR / H"),
-            listOf("GOLD / H", "ABATES / H"),
-            listOf("SOBREVIVÊNCIA", "ENCONTROS SHINY / H")
+            listOf("COINS ATUAIS", "COINS LÍQUIDOS / H"),
+            listOf("ABATES / H", "SOBREVIVÊNCIA"),
+            listOf("ENCONTROS SHINY / H", "")
         )
         metricRows.forEach { pair ->
             val r = row()
@@ -251,19 +252,33 @@ class MainActivity : Activity() {
         val data = CaptureStore.read(this, selectedAccount)
         val m = data?.optJSONObject("measurements")
         val minutes = m?.optInt("sampleMinutes", 0) ?: 0
+        val player = data?.optJSONObject("player")
         val value = when (title) {
             "XP DO POKÉMON / H" -> m?.optLong("xpPokemonH", -1L) ?: -1L
             "XP DO TREINADOR / H" -> m?.optLong("xpTrainerH", -1L) ?: -1L
+            "COINS ATUAIS" -> data?.optLong("coinsBalance", player?.optLong("coins", player?.optLong("gold", -1L) ?: -1L) ?: -1L) ?: -1L
+            "COINS LÍQUIDOS / H" -> if (m?.has("coinsNetH") == true) m.optLong("coinsNetH") else Long.MIN_VALUE
             "ABATES / H" -> m?.optLong("killsH", -1L) ?: -1L
             "SOBREVIVÊNCIA" -> (m?.optInt("survivalPct", -1) ?: -1).toLong()
             else -> -1L
         }
-        if (value < 0) {
+        if (title == "") return "—" to ""
+        if (value == Long.MIN_VALUE) return "—" to "variação ainda não medida"
+        if (value < 0 && title != "COINS LÍQUIDOS / H") {
             val detail = if (minutes > 0) "coletando · ${minutes} min" else "aguardando medição"
             return "—" to detail
         }
-        val formatted = if (title == "SOBREVIVÊNCIA") "${value}%" else "%,d".format(value)
-        val detail = if (title == "SOBREVIVÊNCIA") "amostras com HP > 0" else "janela: ${minutes} min"
+        val formatted = when (title) {
+            "SOBREVIVÊNCIA" -> "${value}%"
+            "COINS LÍQUIDOS / H" -> (if (value > 0) "+" else "") + "%,d".format(value)
+            else -> "%,d".format(value)
+        }
+        val detail = when (title) {
+            "SOBREVIVÊNCIA" -> "amostras com HP > 0"
+            "COINS ATUAIS" -> "saldo da conta"
+            "COINS LÍQUIDOS / H" -> "variação do saldo · ${minutes} min"
+            else -> "janela: ${minutes} min"
+        }
         return formatted to detail
     }
 
