@@ -141,6 +141,40 @@ object GameDataCapture {
       return null;
     }
   };
+  // Histórico de capturas mantido pelo próprio jogo (quando disponível). Apenas campos públicos de cada captura são copiados.
+  const readCaptureHistory = () => {
+    const nick = String(state?.nick ?? '').trim();
+    if (!nick) return { available: false, records: [], count: 0 };
+    try {
+      const raw = localStorage.getItem('capturas-hist:' + nick.toLowerCase());
+      if (!raw) return { available: false, records: [], count: 0 };
+      const history = JSON.parse(raw);
+      if (!Array.isArray(history)) return { available: false, records: [], count: 0 };
+      const records = history.slice(0, 100).map(c => {
+        const ivs = c?.ivs && typeof c.ivs === 'object'
+          ? Object.values(c.ivs).reduce((total, value) => total + (Number(value) || 0), 0)
+          : null;
+        return {
+          em: Number(c?.em) || 0,
+          nome: String(c?.nome ?? '—').slice(0, 40),
+          level: Number(c?.level) || 0,
+          shiny: !!c?.shiny,
+          speciesId: c?.speciesId ?? null,
+          quality: c?.quality ?? null,
+          ivTotal: Number.isFinite(ivs) ? ivs : null
+        };
+      });
+      return {
+        available: true,
+        records,
+        count: records.length,
+        latestAt: records.reduce((latest, item) => Math.max(latest, item.em), 0),
+        oldestAt: records.reduce((oldest, item) => item.em > 0 ? Math.min(oldest, item.em) : oldest, Number.MAX_SAFE_INTEGER)
+      };
+    } catch (_) {
+      return { available: false, records: [], count: 0 };
+    }
+  };
   // Consumo de bolas observado pela redução do inventário durante uma hunt normal.
   // É um proxy de lançamentos; não é apresentado como evento individual confirmado.
   let previousBallCounts = null;
@@ -757,6 +791,7 @@ object GameDataCapture {
         pokemons
       },
       gameSession: readGameSession(),
+      captureHistory: readCaptureHistory(),
       huntAnalysis,
       preyTelemetry: {
         eventCounts: { ...preyTelemetry.eventCounts },
