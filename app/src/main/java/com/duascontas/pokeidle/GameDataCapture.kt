@@ -222,7 +222,7 @@ object CaptureStore {
             // Eventos de conexão não apagam o último snapshot completo recebido.
             val kind = data.optString("kind")
             val previous = read(context, accountId)
-            val merged = if (previous != null && (kind == "connection" || kind == "capture-ready")) {
+            val merged = if (previous != null && (kind == "connection" || kind == "capture-ready" || kind == "market")) {
                 JSONObject(previous.toString()).apply {
                     val keys = data.keys()
                     while (keys.hasNext()) {
