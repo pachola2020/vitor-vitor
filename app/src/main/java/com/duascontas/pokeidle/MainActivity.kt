@@ -76,7 +76,7 @@ class MainActivity : Activity() {
         brand.addView(label("Assistant", 28f, TEXT, true))
         brand.addView(label("Painel pessoal de acompanhamento", 13f, MUTED))
         top.addView(brand, LinearLayout.LayoutParams(0, -2, 1f))
-        val version = label("TESTE\n0.5.12", 11f, MUTED, true).apply {
+        val version = label("TESTE\n0.5.13", 11f, MUTED, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(10), dp(8), dp(10), dp(8))
             setBackgroundColor(PANEL_ALT)
@@ -480,25 +480,55 @@ class MainActivity : Activity() {
             showDialog("Mercado", "Ainda não há registros capturados. Abra a aba ou o histórico desejado no Mercado do jogo; a leitura é passiva e não compra nem anuncia itens.")
             return
         }
+        fun amount(value: Any?): Long? {
+            if (value == null || value == org.json.JSONObject.NULL) return null
+            if (value is Number) return value.toLong()
+            val digits = value.toString().filter { it.isDigit() }
+            return digits.toLongOrNull()
+        }
         val lines = buildString {
             appendLine("Aba: ${market.optString("aba", "não identificada")} · Página: ${market.optInt("pagina", 0)}")
             appendLine("Registros observados: ${linesArray.length()} · Total informado: ${market.optInt("total", 0)}")
+            appendLine("Páginas observadas: ${market.optJSONArray("paginasObservadas")?.length() ?: 1}")
             appendLine()
             for (i in 0 until minOf(linesArray.length(), 25)) {
                 val item = linesArray.optJSONObject(i) ?: continue
                 val ficha = item.optJSONObject("ficha")
                 val name = ficha?.optString("nome")?.takeIf { it.isNotBlank() } ?: item.optString("nome", "Registro")
-                val price = item.opt("preco")?.toString() ?: item.opt("bruto")?.toString() ?: "—"
-                val currency = item.optString("moeda", "")
-                appendLine("$name · $price $currency · ${item.optString("status", "status não informado")}")
-                val net = item.opt("liquido")?.toString() ?: item.opt("valorLiquido")?.toString()
-                if (net != null) appendLine("  Líquido informado: $net")
+                val priceRaw = item.opt("preco") ?: item.opt("bruto")
+                val gross = amount(priceRaw)
+                val currency = item.optString("moeda", "").lowercase()
+                val isPokemon = ficha != null && (ficha.has("speciesId") || ficha.has("level"))
+                val currencyLabel = when {
+                    currency.contains("gem") -> "Gems"
+                    currency.contains("coin") || currency.contains("gold") -> "Coins"
+                    else -> currency.ifBlank { "moeda não identificada" }
+                }
+                appendLine("$name · ${gross?.let { "%,d".format(it) } ?: "preço —"} $currencyLabel")
+                appendLine("  Status observado: ${item.optString("status", "não informado")}")
+                if (gross != null && (currency.contains("gem") || currency.contains("coin") || currency.contains("gold"))) {
+                    val feeRate = when {
+                        currency.contains("gem") && isPokemon && gross <= 500L -> 0.13
+                        currency.contains("gem") && isPokemon && gross <= 5000L -> 0.10
+                        currency.contains("gem") && isPokemon -> 0.075
+                        else -> 0.15
+                    }
+                    val fee = kotlin.math.ceil(gross * feeRate).toLong()
+                    appendLine("  Comissão estimada: ${"%,d".format(fee)} (${(feeRate * 100).toInt()}%)")
+                    appendLine("  Líquido estimado se vender: ${"%,d".format((gross - fee).coerceAtLeast(0L))} $currencyLabel")
+                }
+                if (isPokemon) {
+                    val days = item.optInt("dias", item.optInt("duracao", 0)).coerceIn(0, 30)
+                    if (days > 0) appendLine("  Custo do anúncio: ${"%,d".format(days * 100000L)} Coins (100.000/dia)")
+                }
+                val serverNet = amount(item.opt("liquido") ?: item.opt("valorLiquido"))
+                if (serverNet != null) appendLine("  Líquido informado pelo jogo: ${"%,d".format(serverNet)}")
             }
             if (linesArray.length() > 25) appendLine("… e mais ${linesArray.length() - 25} registros.")
             appendLine()
-            append("Registros brutos observados não são prova de venda concluída. A análise de taxas, custos e histórico confirmado ainda precisa ser conectada.")
+            append("As comissões são estimativas baseadas nos Termos atuais. Anúncio ativo não é venda concluída; só o status/histórico confirmado permite contabilizar uma venda. Nenhuma ação é executada.")
         }
-        showDialog("Mercado", lines)
+        showDialog("Mercado · custos e líquido", lines)
     }
 
     private fun addAnalysisOption(title: String, description: String, action: () -> Unit) {
