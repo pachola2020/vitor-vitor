@@ -234,7 +234,9 @@ object AppUpdater {
     }
 
     private fun install(activity: Activity, uri: Uri) {
-        activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY_PENDING_URI).apply()
+        activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .remove(KEY_PENDING_URI).remove(KEY_DOWNLOAD).remove(KEY_DIGEST)
+            .putBoolean(KEY_PERMISSION_REQUESTED, false).apply()
         try {
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, "application/vnd.android.package-archive")
