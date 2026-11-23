@@ -682,7 +682,7 @@ open class OverlayService : Service() {
                 setStroke(dp(1), 0xFF2E4050.toInt())
             }
             minHeight = dp(58)
-            maxLines = 12
+            maxLines = 20
         }
         hunterResult = result
         panel.addView(result)
@@ -836,7 +836,7 @@ open class OverlayService : Service() {
                         appendBest("Gold", "gold", false)
                         appendBest("Gold", "gold", true)
                     }
-                    text.append("\nToque em “Ver resultado” para atualizar esta consulta.")
+                    text.append("\nCenários teóricos; confirme no farm real antes de investir.")
                     output.text = text.toString()
                 } else if (status == "erro") {
                     output.text = "⚠️  A análise falhou\n\n" + analysis.optString("message", "Erro sem detalhes")
