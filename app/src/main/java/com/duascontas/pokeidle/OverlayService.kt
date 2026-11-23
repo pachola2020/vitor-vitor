@@ -645,7 +645,7 @@ open class OverlayService : Service() {
             textSize = 11f
             setTextColor(0xFFD5DEE7.toInt())
             setPadding(dp(4), dp(4), dp(4), dp(2))
-            maxLines = 5
+            maxLines = 9
         }
         hunterResult = result
         panel.addView(result)
@@ -703,10 +703,24 @@ open class OverlayService : Service() {
                     "hunt_result" -> {
                         val analysis = data.optJSONObject("huntAnalysis")
                         if (analysis == null) {
-                            "Ainda não existe resultado. Toque em “Calcular Hunt agora” para iniciar a análise."
+                            "Ainda não existe resultado. Toque em “Calcular Hunt” para iniciar a análise."
                         } else {
                             val pokemon = analysis.optJSONArray("pokemon")
-                            "HUNT ANALYZER · ${analysis.optString("status", "sem status")}\\nPokémon analisados: ${analysis.optInt("pokemonAnalisados", 0)}\\nResultados disponíveis: ${pokemon?.length() ?: 0}\\nToque em Calcular Hunt agora para atualizar a análise."
+                            buildString {
+                                append("HUNT ANALYZER · ${analysis.optString("status", "sem status")}\\n")
+                                append("Pokémon analisados: ${analysis.optInt("pokemonAnalisados", 0)}\\n")
+                                if (pokemon != null) {
+                                    for (i in 0 until minOf(2, pokemon.length())) {
+                                        val p = pokemon.optJSONObject(i) ?: continue
+                                        append("${p.optString("nome", "Pokémon")} Nv.${p.optInt("level", 0)}\\n")
+                                        val noAoe = p.optJSONObject("melhorXpSemAoe")
+                                        val aoe = p.optJSONObject("melhorXpComAoe")
+                                        if (noAoe != null) append("Sem AoE: ${noAoe.optString("nome")} · XP/h ${noAoe.optLong("xpPokemonH")}\\n")
+                                        if (aoe != null) append("Com AoE: ${aoe.optString("nome")} · XP/h ${aoe.optLong("xpPokemonHAoeHipotetico")}\\n")
+                                    }
+                                }
+                                append("A estimativa completa está na tela Hunt Analyzer do app.")
+                            }
                         }
                     }
                     else -> "Consulta indisponível."
