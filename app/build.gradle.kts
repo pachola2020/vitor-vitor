@@ -16,8 +16,8 @@ android {
         applicationId = "com.duascontas.pokeidle.assistant.v2"
         minSdk = 28
         targetSdk = 34
-        versionCode = 44
-        versionName = "0.5.39-dashboard-inline-hunt" // All explicit cookie flushes run off the UI thread
+        versionCode = 45
+        versionName = "0.5.40-hunter-visual-cards" // All explicit cookie flushes run off the UI thread
     }
 
     signingConfigs {
