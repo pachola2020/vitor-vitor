@@ -58,6 +58,9 @@ open class OverlayService : Service() {
         const val ACTION_RELOAD_ALL = "com.duascontas.pokeidle.RELOAD_ALL"
         const val ACTION_CLOSE_ALL = "com.duascontas.pokeidle.CLOSE_ALL"
         private const val CHANNEL_ID = "janelas"
+        private const val MAX_RENDERER_RECOVERY_ATTEMPTS = 4
+        private val RENDERER_RECOVERY_DELAYS_MS = longArrayOf(2000L, 5000L, 15000L, 30000L)
+
     }
 
     private var wm: WindowManager? = null
@@ -77,6 +80,11 @@ open class OverlayService : Service() {
     private val alphas = floatArrayOf(1f, 0.6f, 0.3f)
     private var retryScheduled = false
     private var receiverRegistered = false
+    private var rendererRecoveryAttempts = 0
+    private var rendererRecoveryPending = false
+    private var rendererRecoveryRunnable: Runnable? = null
+    private var rendererHealthCheck: Runnable? = null
+    private var recoveryMessage: TextView? = null
     private val handler = Handler(Looper.getMainLooper())
 
     private val flusher = object : Runnable {
@@ -92,7 +100,7 @@ open class OverlayService : Service() {
     private val ctrlReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
-                ACTION_RELOAD_ALL -> web?.reload()
+                ACTION_RELOAD_ALL -> reloadOrRecover()
                 ACTION_CLOSE_ALL -> stopSelf()
             }
         }
@@ -150,6 +158,9 @@ open class OverlayService : Service() {
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
+        rendererRecoveryRunnable = null
+        rendererHealthCheck = null
+        rendererRecoveryPending = false
         if (receiverRegistered) {
             try {
                 unregisterReceiver(ctrlReceiver)
@@ -246,8 +257,28 @@ open class OverlayService : Service() {
                 if (request.isForMainFrame) scheduleRetry(request.url.toString())
             }
 
+            override fun onPageCommitVisible(view: WebView, url: String) {
+                if (view !== web) return
+                rendererHealthCheck?.let { handler.removeCallbacks(it) }
+                val committedView = view
+                val healthCheck = Runnable {
+                    if (web === committedView) rendererRecoveryAttempts = 0
+                }
+                rendererHealthCheck = healthCheck
+                handler.postDelayed(healthCheck, 60000)
+            }
+
             override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
-                handler.post { rebuildWebView() }
+                rendererHealthCheck?.let { handler.removeCallbacks(it) }
+                rendererHealthCheck = null
+                if (view !== web) {
+                    try { view.destroy() } catch (_: Exception) {}
+                    return true
+                }
+                web = null
+                (view.parent as? ViewGroup)?.removeView(view)
+                try { view.destroy() } catch (_: Exception) {}
+                scheduleRendererRecovery()
                 return true
             }
         }
@@ -268,7 +299,59 @@ open class OverlayService : Service() {
         }, 10000)
     }
 
-    /** Se o navegador interno travar (pouca memória), recria o WebView sozinho. */
+    /** Recria o WebView com limite e espera progressiva após falhas do renderizador. */
+    private fun scheduleRendererRecovery(userInitiated: Boolean = false) {
+        if (userInitiated) {
+            rendererRecoveryRunnable?.let { handler.removeCallbacks(it) }
+            rendererRecoveryRunnable = null
+            rendererRecoveryPending = false
+            rendererRecoveryAttempts = 0
+            recoveryMessage?.let { content?.removeView(it) }
+            recoveryMessage = null
+        }
+        if (rendererRecoveryPending || web != null || content == null) return
+        if (rendererRecoveryAttempts >= MAX_RENDERER_RECOVERY_ATTEMPTS) {
+            showRendererRecoveryMessage()
+            return
+        }
+        val attempt = rendererRecoveryAttempts.coerceAtMost(RENDERER_RECOVERY_DELAYS_MS.lastIndex)
+        val delay = RENDERER_RECOVERY_DELAYS_MS[attempt]
+        rendererRecoveryAttempts++
+        rendererRecoveryPending = true
+        val task = Runnable {
+            rendererRecoveryPending = false
+            rendererRecoveryRunnable = null
+            if (web != null || content == null) return@Runnable
+            try {
+                rebuildWebView()
+            } catch (_: Exception) {
+                scheduleRendererRecovery()
+            }
+        }
+        rendererRecoveryRunnable = task
+        handler.postDelayed(task, delay)
+    }
+
+    /** Depois de quatro falhas seguidas, para de recriar em loop e oferece tentativa manual. */
+    private fun showRendererRecoveryMessage() {
+        val c = content ?: return
+        if (recoveryMessage != null) return
+        val message = TextView(this).apply {
+            text = "O navegador do jogo falhou repetidamente. Toque em ↻ para tentar novamente."
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            gravity = Gravity.CENTER
+            setPadding(dp(20), dp(20), dp(20), dp(20))
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+        }
+        recoveryMessage = message
+        c.addView(message, 1.coerceAtMost(c.childCount))
+    }
+
+    private fun reloadOrRecover() {
+        if (web != null) web?.reload() else scheduleRendererRecovery(userInitiated = true)
+    }
+
     private fun rebuildWebView() {
         val c = content ?: return
         val old = web
@@ -277,13 +360,16 @@ open class OverlayService : Service() {
             val i = c.indexOfChild(old)
             if (i >= 0) idx = i
             c.removeView(old)
-            try {
-                old.destroy()
-            } catch (e: Exception) {
-            }
+            try { old.destroy() } catch (_: Exception) {}
         }
+        recoveryMessage?.let {
+            val i = c.indexOfChild(it)
+            if (i >= 0) idx = i
+            c.removeView(it)
+        }
+        recoveryMessage = null
         val wv = newWebView()
-        c.addView(wv, idx)
+        c.addView(wv, idx.coerceAtMost(c.childCount))
         web = wv
     }
 
@@ -418,7 +504,7 @@ open class OverlayService : Service() {
 
         keyBtn.setOnClickListener { setTyping(!typing) }
         alphaBtn.setOnClickListener { cycleAlpha() }
-        reloadBtn.setOnClickListener { web?.reload() }
+        reloadBtn.setOnClickListener { reloadOrRecover() }
         minBtn.setOnClickListener { minimize() }
         closeBtn.setOnClickListener { stopSelf() }
 
