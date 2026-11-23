@@ -624,6 +624,13 @@ open class OverlayService : Service() {
         header.addView(title)
         header.addView(close)
         panel.addView(header)
+        val subtitle = TextView(this).apply {
+            text = "CONTA $accountId  ·  Consulte sem sair da Hunt"
+            setTextColor(0xFF9EACBA.toInt())
+            textSize = 10f
+            setPadding(dp(2), 0, 0, dp(8))
+        }
+        panel.addView(subtitle)
         val actions = listOf(
             "Oportunidades" to "opportunities",
             "Bônus XP" to "xp",
@@ -642,12 +649,15 @@ open class OverlayService : Service() {
                 val button = TextView(this).apply {
                     text = label
                     textSize = 12f
-                    setTextColor(Color.WHITE)
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    setTextColor(if (key == "hunt") 0xFF102027.toInt() else Color.WHITE)
                     gravity = Gravity.CENTER
                     background = GradientDrawable().apply {
-                        setColor(0xFF263544.toInt())
-                        cornerRadius = dp(9).toFloat()
+                        setColor(if (key == "hunt") 0xFF69C7B8.toInt() else if (key == "shiny") 0xFF594A70.toInt() else 0xFF263544.toInt())
+                        cornerRadius = dp(10).toFloat()
+                        setStroke(dp(1), if (key == "hunt") 0xFF8DE0D1.toInt() else 0xFF35495B.toInt())
                     }
+                    elevation = dp(2).toFloat()
                     layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply {
                         if (index > 0) marginStart = dp(5)
                     }
@@ -665,8 +675,14 @@ open class OverlayService : Service() {
             text = "Escolha uma consulta. A análise só será executada quando você solicitar."
             textSize = 11f
             setTextColor(0xFFD5DEE7.toInt())
-            setPadding(dp(4), dp(4), dp(4), dp(2))
-            maxLines = 9
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+            background = GradientDrawable().apply {
+                setColor(0xFF17212C.toInt())
+                cornerRadius = dp(11).toFloat()
+                setStroke(dp(1), 0xFF2E4050.toInt())
+            }
+            minHeight = dp(58)
+            maxLines = 12
         }
         hunterResult = result
         panel.addView(result)
@@ -776,7 +792,7 @@ open class OverlayService : Service() {
                     val text = StringBuilder()
                     text.append("🏆  RESULTADO DA HUNT ANALYZER\n")
                     text.append(analysis.optInt("pokemonAnalisados", 0)).append(" Pokémon analisados\n")
-                    text.append("Estimativas teóricas · não são medições reais\n\n")
+                    text.append("Estimativa teórica · confiança baixa · não é medição real\n\n")
                     if (pokemon != null) {
                         for (i in 0 until minOf(3, pokemon.length())) {
                             val p = pokemon.optJSONObject(i) ?: continue
@@ -785,8 +801,16 @@ open class OverlayService : Service() {
                                 .append(" Nv.").append(p.optInt("level", 0)).append("\n")
                             val noAoe = p.optJSONObject("melhorXpSemAoe")
                             val aoe = p.optJSONObject("melhorXpComAoe")
-                            if (noAoe != null) text.append("XP sem AoE: ").append("%,d".format(noAoe.optLong("xpPokemonH"))).append("/h · ").append(noAoe.optString("nome")).append("\n")
-                            if (aoe != null) text.append("XP com AoE: ").append("%,d".format(aoe.optLong("xpPokemonHAoeHipotetico"))).append("/h · ").append(aoe.optString("nome")).append(" (hipótese)\n")
+                            if (noAoe != null) {
+                                text.append("SEM AoE · ").append(noAoe.optString("nome")).append("\n")
+                                text.append("XP Pokémon ").append("%,d".format(noAoe.optLong("xpPokemonH"))).append("/h · XP treinador ").append("%,d".format(noAoe.optLong("xpTreinadorH"))).append("/h\n")
+                                text.append("Gold ").append("%,d".format(noAoe.optLong("goldH"))).append("/h · ").append("%,d".format(noAoe.optLong("abatesH"))).append(" abates/h\n")
+                            }
+                            if (aoe != null) {
+                                text.append("COM AoE (hipótese) · ").append(aoe.optString("nome")).append("\n")
+                                text.append("XP Pokémon ").append("%,d".format(aoe.optLong("xpPokemonHAoeHipotetico"))).append("/h · XP treinador ").append("%,d".format(aoe.optLong("xpTreinadorHAoeHipotetico"))).append("/h\n")
+                                text.append("Gold ").append("%,d".format(aoe.optLong("goldHAoeHipotetico"))).append("/h · ").append("%,d".format(aoe.optLong("abatesHAoeHipotetico"))).append(" abates/h\n")
+                            }
                         }
                     }
                     text.append("\nToque em “Ver resultado” para atualizar esta consulta.")
