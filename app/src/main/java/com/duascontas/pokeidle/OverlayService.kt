@@ -676,12 +676,12 @@ open class OverlayService : Service() {
     private fun showHunterSection(section: String) {
         val output = hunterResult ?: return
         if (section == "hunt") {
-            output.text = "⏳  ANALISANDO HUNTS\n\nO resultado aparecerá aqui automaticamente. Você não precisa trocar de aba."
+            val requestedAt = System.currentTimeMillis()\n            output.text = "⏳  ANALISANDO HUNTS\n\nO resultado aparecerá aqui automaticamente. Você não precisa trocar de aba."
             web?.evaluateJavascript(
                 "window.__pokeIdleRunHuntAnalysis && window.__pokeIdleRunHuntAnalysis()"
             ) { result ->
                 if (result == "true") {
-                    pollHuntResult(0)
+                    pollHuntResult(0, requestedAt)
                 } else {
                     output.text = "⚠️  Não foi possível iniciar. Abra o jogo e aguarde Pokémon, Hunts e catálogo serem carregados."
                 }
@@ -761,7 +761,7 @@ open class OverlayService : Service() {
         }
     }
 
-    private fun pollHuntResult(attempt: Int) {
+    private fun pollHuntResult(attempt: Int, requestedAt: Long) {
         if (attempt >= 40 || hunterPanel?.visibility != View.VISIBLE) return
         hunterQueryExecutor.execute {
             val data = CaptureStore.read(this, accountId)
@@ -770,7 +770,7 @@ open class OverlayService : Service() {
                 if (hunterPanel?.visibility != View.VISIBLE) return@post
                 val analysis = data?.optJSONObject("huntAnalysis")
                 val status = analysis?.optString("status")
-                if (analysis != null && status == "estimativa_disponivel") {
+                if (analysis != null && status == "estimativa_disponivel" && analysis.optLong("calculadoEm", 0L) >= requestedAt) {
                     val pokemon = analysis.optJSONArray("pokemon")
                     val text = StringBuilder()
                     text.append("🏆  RESULTADO DA HUNT ANALYZER\n")
@@ -794,7 +794,7 @@ open class OverlayService : Service() {
                     output.text = "⚠️  A análise falhou\n\n" + analysis.optString("message", "Erro sem detalhes")
                 } else {
                     output.text = "⏳  ANALISANDO HUNTS\n\nComparando Pokémon e Hunts liberadas…\n\nVocê não precisa trocar de aba."
-                    handler.postDelayed({ pollHuntResult(attempt + 1) }, 1500)
+                    handler.postDelayed({ pollHuntResult(attempt + 1, requestedAt) }, 1500)
                 }
             }
         }
