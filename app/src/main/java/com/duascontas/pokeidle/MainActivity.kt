@@ -202,7 +202,7 @@ class MainActivity : Activity() {
         val player = data.optJSONObject("player")
         val active = player?.optJSONObject("activePokemon")
         val pokemon = active?.optString("nome")?.takeIf { !it.isNullOrBlank() } ?: "não identificado"
-        val teamCount = player?.optJSONArray("team")?.length() ?: 0
+        val teamCount = data.optJSONArray("team")?.length() ?: 0
         val catalog = data.optJSONObject("catalog")
         val typeTableSize = catalog?.optJSONObject("combate")?.optJSONObject("tabelaTipos")?.length() ?: 0
         val combatReady = typeTableSize > 0
