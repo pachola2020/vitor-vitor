@@ -495,6 +495,7 @@ class MainActivity : Activity() {
         val captureHistory = snapshot?.optJSONObject("captureHistory")
         val captureRecords = captureHistory?.optJSONArray("records")
         val capturesBySpecies = org.json.JSONObject()
+        val captureSpeciesNames = org.json.JSONObject()
         var captureEventsObserved = 0
         var captureShiniesObserved = 0
         if (captureRecords != null) for (i in 0 until captureRecords.length()) {
@@ -504,6 +505,7 @@ class MainActivity : Activity() {
             val speciesKey = if (!speciesId.isNullOrBlank()) "id:" + speciesId
                 else "nome:" + capture.optString("nome", "desconhecido").lowercase(java.util.Locale.ROOT)
             capturesBySpecies.put(speciesKey, capturesBySpecies.optInt(speciesKey, 0) + 1)
+            if (!captureSpeciesNames.has(speciesKey)) captureSpeciesNames.put(speciesKey, capture.optString("nome", speciesKey))
             captureEventsObserved++
             if (capture.optBoolean("shiny")) captureShiniesObserved++
         }
@@ -537,6 +539,7 @@ class MainActivity : Activity() {
             .put("captureEventsObserved", captureEventsObserved)
             .put("captureShiniesObserved", captureShiniesObserved)
             .put("capturesBySpecies", capturesBySpecies)
+            .put("captureSpeciesNames", captureSpeciesNames)
             .put("contextStable", contextStable)
             .put("validForComparison", validForComparison)
             .put("delta", delta)
@@ -634,7 +637,10 @@ class MainActivity : Activity() {
                     }
                     return if (elapsed > 0L) "%.2f/h".format(count.toDouble() * 3600000.0 / elapsed.toDouble()) else "—"
                 }
-                out.append("Espécie ").append(speciesKey).append(" · OFF ").append(speciesRate("OFF"))
+                val displayName = group.firstNotNullOfOrNull { item ->
+                    item.optJSONObject("captureSpeciesNames")?.optString(speciesKey)?.takeIf { it.isNotBlank() }
+                } ?: speciesKey
+                out.append("Captura ").append(displayName).append(" · OFF ").append(speciesRate("OFF"))
                     .append(" · ON ").append(speciesRate("ON")).append("\n")
             }
             out.append("\n")
