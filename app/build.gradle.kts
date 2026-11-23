@@ -17,7 +17,7 @@ android {
         minSdk = 28
         targetSdk = 34
         versionCode = 37
-        versionName = "0.5.32-lightweight-hunt-candidate" // Compact native snapshot and equal Hunt species weighting
+        versionName = "0.5.32-lightweight-hunt-candidate" // Compact payload; corrected Hunt distribution model
     }
 
     signingConfigs {
