@@ -92,6 +92,15 @@ object GameDataCapture {
     quality: p.quality ?? null, iv: p.iv ?? null, slot: p.slot ?? null,
     poder: p.poder ?? null, refino: p.refino ?? null
   });
+  const readCoins = () => {
+    const candidates = [state?.coins, state?.gold, state?.player?.coins, state?.player?.gold];
+    for (const value of candidates) {
+      if (value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value))) {
+        return { value: Number(value), source: value === state?.coins ? 'state.coins' : value === state?.gold ? 'state.gold' : 'nested-player' };
+      }
+    }
+    return { value: null, source: null };
+  };
   const measure = () => {
     const now = Date.now();
     samples = samples.filter(s => now - s.t <= 15 * 60 * 1000);
@@ -114,10 +123,19 @@ object GameDataCapture {
     const killSpan = kills.length >= 2 ? kills[kills.length - 1] - kills[0] : 0;
     const killsH = kills.length >= 5 && killSpan >= 120000
       ? Math.round((kills.length - 1) * 3600000 / killSpan) : null;
+    const coinSamples = samples.filter(s => s.coins != null);
+    let coinsNetH = null;
+    if (coinSamples.length >= 2) {
+      const firstCoin = coinSamples[0], lastCoin = coinSamples[coinSamples.length - 1];
+      const coinElapsed = lastCoin.t - firstCoin.t;
+      if (coinElapsed >= 120000) {
+        coinsNetH = Math.round((lastCoin.coins - firstCoin.coins) * 3600000 / coinElapsed);
+      }
+    }
     const hpSamples = samples.filter(s => s.hp != null && s.maxHp > 0);
     const survivalPct = hpSamples.length
       ? Math.round(100 * hpSamples.filter(s => s.hp > 0).length / hpSamples.length) : null;
-    return { xpPokemonH, xpTrainerH, killsH, survivalPct, sampleMinutes: minutes, killSamples: kills.length };
+    return { xpPokemonH, xpTrainerH, killsH, survivalPct, coinsNetH, sampleMinutes: minutes, killSamples: kills.length };
   };
   const publish = (kind, force = false) => {
     if (!state) return;
@@ -132,6 +150,7 @@ object GameDataCapture {
       .sort((a, b) => (Number(a.slot) || 0) - (Number(b.slot) || 0));
     const active = pokemons.find(p => String(p.id) === String(state.activeId)) || null;
     const metrics = measure();
+    const coinData = readCoins();
     const automation = state.automation || {};
     const loja = state.loja || {};
     const guild = state.guild || {};
@@ -140,7 +159,8 @@ object GameDataCapture {
     send({
       kind, status: 'connected', connected: true, ready: true,
       nick: state.nick ?? null, level: state.level,
-      gold: Number(state.gold) || 0, xpTreinador: Number(state.xp) || 0,
+      coinsBalance: coinData.value, currencySource: coinData.source,
+      gold: coinData.value, coins: coinData.value, xpTreinador: Number(state.xp) || 0,
       activeId: state.activeId, huntSlug: state.huntSlug,
       team, pokemonCount: pokemons.length,
       gameAuto: {
@@ -171,7 +191,7 @@ object GameDataCapture {
       })),
       player: {
         level: state.level, xp: Number(state.xp) || 0,
-        coins: state.coins ?? null, gold: state.gold ?? null,
+        coins: coinData.value, gold: coinData.value,
         activeId: state.activeId, huntSlug: state.huntSlug,
         activePokemon: active, pokemonCount: pokemons.length, pokemons
       },
@@ -287,7 +307,8 @@ object GameDataCapture {
                   t: Date.now(), px: Number(active.xp) || 0,
                   tx: Number(state.xp) || 0,
                   hp: Number.isFinite(Number(active.hp)) ? Number(active.hp) : null,
-                  maxHp: Number(active.maxHp) || 0
+                  maxHp: Number(active.maxHp) || 0,
+                  coins: readCoins().value
                 });
               }
               publish('estado');
