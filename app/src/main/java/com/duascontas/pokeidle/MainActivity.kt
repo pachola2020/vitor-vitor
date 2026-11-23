@@ -1026,17 +1026,29 @@ class MainActivity : Activity() {
 
     private fun showShinyDetails() {
         val data = dashboardData
-        val session = data?.optJSONObject("gameSession")
+        if (data == null) {
+            showDialog("Shiny Hunt", "Ainda não há snapshot desta conta. Abra o jogo e aguarde a conexão antes de consultar.")
+            return
+        }
+        val session = data.optJSONObject("gameSession")
+        val measured = data.optJSONObject("measurements")
         val balls = sumJsonObject(session?.optJSONObject("bolas"))
         val seen = nullableLong(session, "shiniesVistos")
         val captured = nullableLong(session, "shinies")
-        val diag = data?.optJSONObject("diagnostics")
+        val throws = nullableLong(measured, "ballThrowsObserved")
+        val throwsRate = nullableLong(measured, "ballThrowsH")
+        val shinyEvents = nullableLong(measured, "shinyCapturesObserved")
+        val sampleMinutes = nullableLong(measured, "sampleMinutes") ?: 0L
+        val diag = data.optJSONObject("diagnostics")
         val eventKinds = diag?.optJSONObject("battleEventKinds")
         var eventTypeCount = 0
         var observedEventCount = 0
+        val eventSummary = StringBuilder()
         eventKinds?.keys()?.forEach { key ->
             eventTypeCount++
-            observedEventCount += eventKinds.optInt(key, 0).coerceAtLeast(0)
+            val count = eventKinds.optInt(key, 0).coerceAtLeast(0)
+            observedEventCount += count
+            if (count > 0 && eventTypeCount <= 8) eventSummary.appendLine("• ").append(key).append(": ").append(count)
         }
         val eventSamples = diag?.optJSONObject("battleEventSamples")
         var sampleCount = 0
@@ -1045,19 +1057,24 @@ class MainActivity : Activity() {
         }
         val sessionAvailable = diag?.optBoolean("gameSessionAvailable", false) == true
         val lines = buildString {
-            appendLine("Bolas consumidas na sessão: ${balls ?: "aguardando"}")
-            appendLine("Shinies vistos (contador do jogo): ${seen ?: "aguardando"}")
-            appendLine("Shinies registrados (contador do jogo): ${captured ?: "aguardando"}")
-            appendLine("Contador local da sessão encontrado: ${if (sessionAvailable) "sim" else "não"}")
+            appendLine("CONTADORES DO JOGO")
+            appendLine("Bolas no contador da sessão: ${balls ?: "aguardando"}")
+            appendLine("Shinies vistos: ${seen ?: "aguardando"}")
+            appendLine("Shinies registrados: ${captured ?: "aguardando"}")
+            appendLine("Sessão local disponível: ${if (sessionAvailable) "sim" else "não"}")
             appendLine()
-            appendLine("Eventos de batalha observados: $observedEventCount em $eventTypeCount tipos")
-            appendLine("Amostras técnicas guardadas: $sampleCount (disponíveis no diagnóstico)")
+            appendLine("OBSERVAÇÃO DE EVENTOS")
+            appendLine("Consumo de bolas inferido pelo estoque: ${throws ?: "sem amostra"}")
+            appendLine("Ritmo inferido: ${throwsRate?.let { "%,d/h".format(it) } ?: "aguardando amostra"}")
+            appendLine("Capturas shiny identificadas em eventos: ${shinyEvents ?: 0}")
+            appendLine("Janela de amostra: $sampleMinutes min")
+            appendLine("Eventos de batalha: $observedEventCount em $eventTypeCount tipos")
+            if (eventSummary.isNotEmpty()) append(eventSummary.toString())
+            appendLine("Amostras técnicas guardadas: $sampleCount")
             appendLine()
-            appendLine("Regra do PokeIdle.io: chance-base de 1 em 24.000 por lançamento elegível; a Outland não gera Shiny.")
-            appendLine()
-            append("A probabilidade acumulada continua indisponível até identificar o evento real de lançamento e confirmar espécie com forma Shiny, área elegível e bônus ativos. O contador total de bolas não é suficiente.")
+            append("Não calculo chance acumulada ainda. O consumo de bolas é apenas um proxy; falta confirmar cada lançamento elegível, espécie/área e bônus ativos. Esta tela prioriza o que foi observado nesta conta, sem transformar probabilidade teórica em resultado real.")
         }
-        showDialog("Shiny Hunt", lines)
+        showDialog("Shiny Hunt · dados observados", lines)
     }
 
     private fun showMarketDetails() {
@@ -1065,7 +1082,18 @@ class MainActivity : Activity() {
         val market = data?.optJSONObject("market")
         val linesArray = market?.optJSONArray("linhas")
         if (market == null || linesArray == null || linesArray.length() == 0) {
-            showDialog("Mercado", "Ainda não há registros capturados. Abra a aba ou o histórico desejado no Mercado do jogo; a leitura é passiva e não compra nem anuncia itens.")
+            val diag = data?.optJSONObject("diagnostics")
+            val messages = diag?.optInt("market", 0) ?: 0
+            val keys = diag?.optJSONArray("marketMessageKeys")
+            val keyText = if (keys != null && keys.length() > 0) {
+                (0 until minOf(keys.length(), 12)).joinToString(", ") { keys.optString(it) }
+            } else "nenhuma chave recebida"
+            val message = if (messages > 0) {
+                "O leitor recebeu $messages mensagem(ns) de Mercado, mas não encontrou linhas de anúncio/venda para exibir.\n\nChaves vistas: $keyText\n\nAbra uma aba com registros no Mercado e atualize a leitura. Se continuar vazio, o protocolo pode ter mudado."
+            } else {
+                "Nenhuma mensagem de Mercado foi capturada nesta conta. Abra o jogo nesta conta, entre na aba Vitrine ou Histórico Global do Mercado e aguarde a atualização.\n\nA captura é passiva: não consulta o Mercado em segundo plano e não executa compras ou anúncios."
+            }
+            showDialog("Mercado · aguardando dados", message)
             return
         }
         fun amount(value: Any?): Long? {
