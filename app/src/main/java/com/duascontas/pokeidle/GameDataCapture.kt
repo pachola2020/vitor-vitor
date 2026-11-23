@@ -144,6 +144,7 @@ object GameDataCapture {
         activeId: state.activeId, huntSlug: state.huntSlug,
         activePokemon: active, pokemonCount: pokemons.length, pokemons
       },
+      catalog: catalogData,
       measurements: measure(), market: marketData,
       diagnostics: { ...diagnostics }
     });
