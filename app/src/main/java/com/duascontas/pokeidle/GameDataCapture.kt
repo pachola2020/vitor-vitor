@@ -799,11 +799,15 @@ object GameDataCapture {
                   if (!diagnostics.battleEventSamples[ev.k]) diagnostics.battleEventSamples[ev.k] = [];
                   if (diagnostics.battleEventSamples[ev.k].length < 3) {
                     const sample = {};
-                    for (const key of ['k','quem','pokemonId','pokeId','speciesId','id','bola','ballId','itemId',
-                      'resultado','sucesso','capturado','shiny','huntSlug','area','tipo','motivo','level']) {
+                    // Guarda somente primitivas de eventos raros/amostrados, sem credenciais.
+                    // A captura ampla dos nomes ajuda a descobrir o protocolo real sem adivinhar campos.
+                    for (const key of Object.keys(ev).slice(0, 32)) {
+                      if (/token|cookie|auth|password|senha|email|session|credential/i.test(key)) continue;
                       const value = ev[key];
-                      if (value == null || ['string','number','boolean'].includes(typeof value)) {
+                      if (value == null || ['number','boolean'].includes(typeof value)) {
                         if (value !== undefined) sample[key] = value;
+                      } else if (typeof value === 'string') {
+                        sample[key] = value.slice(0, 100);
                       }
                     }
                     diagnostics.battleEventSamples[ev.k].push(sample);
