@@ -90,7 +90,8 @@ jobs:
           VERSION_NAME=$(grep 'versionName' app/build.gradle.kts | sed -E 's/.*"([^"]+)".*/\1/' | sed 's/-analysis-test$//')
           TAG="assistant-v${VERSION_NAME}"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG já existe; preservando o APK publicado e pulando a criação."
+            gh release upload "$TAG" app/build/outputs/apk/debug/PokeIdle-Assistant.apk --clobber
+            gh release edit "$TAG" --title "PokeIdle Assistant ${VERSION_NAME}" --notes-file CHANGELOG.md
           else
             gh release create "$TAG" app/build/outputs/apk/debug/PokeIdle-Assistant.apk \
               --title "PokeIdle Assistant ${VERSION_NAME}" \
