@@ -128,7 +128,7 @@ open class OverlayService : Service() {
                         val script = "window.__pokeIdleRunHuntAnalysis ? window.__pokeIdleRunHuntAnalysis() : {accepted:false,reason:'bridge_indisponivel'}"
                         val target = web
                         if (target == null) {
-                            CaptureStore.save(this, accountId, org.json.JSONObject()
+                            CaptureStore.save(this@OverlayService, accountId, org.json.JSONObject()
                                 .put("kind", "analysis-control")
                                 .put("analysisRequest", org.json.JSONObject()
                                     .put("requestId", requestId)
@@ -145,7 +145,7 @@ open class OverlayService : Service() {
                                 } catch (_: Exception) {
                                     org.json.JSONObject().put("accepted", false).put("reason", "resposta_invalida")
                                 }
-                                CaptureStore.save(this, accountId, org.json.JSONObject()
+                                CaptureStore.save(this@OverlayService, accountId, org.json.JSONObject()
                                     .put("kind", "analysis-control")
                                     .put("analysisRequest", org.json.JSONObject()
                                         .put("requestId", requestId)
