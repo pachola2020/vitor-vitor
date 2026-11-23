@@ -123,11 +123,39 @@ open class OverlayService : Service() {
                 ACTION_CLOSE_ALL -> stopSelf()
                 ACTION_RUN_HUNT_ANALYSIS -> {
                     val requestedAccount = intent?.getIntExtra("accountId", -1) ?: -1
+                    val requestId = intent?.getLongExtra("requestId", 0L) ?: 0L
                     if (!isTool && requestedAccount == accountId) {
-                        web?.evaluateJavascript(
-                            "window.__pokeIdleRunHuntAnalysis && window.__pokeIdleRunHuntAnalysis()",
-                            null
-                        )
+                        val script = "window.__pokeIdleRunHuntAnalysis ? window.__pokeIdleRunHuntAnalysis() : {accepted:false,reason:'bridge_indisponivel'}"
+                        val target = web
+                        if (target == null) {
+                            CaptureStore.save(this, accountId, org.json.JSONObject()
+                                .put("kind", "analysis-control")
+                                .put("analysisRequest", org.json.JSONObject()
+                                    .put("requestId", requestId)
+                                    .put("accepted", false)
+                                    .put("reason", "webview_indisponivel")
+                                    .put("receivedAt", System.currentTimeMillis()))
+                                .put("updatedAt", System.currentTimeMillis()))
+                        } else {
+                            target.evaluateJavascript(script) { raw ->
+                                val result = try {
+                                    if (raw.isNullOrBlank() || raw == "null") org.json.JSONObject()
+                                        .put("accepted", false).put("reason", "bridge_indisponivel")
+                                    else org.json.JSONObject(raw)
+                                } catch (_: Exception) {
+                                    org.json.JSONObject().put("accepted", false).put("reason", "resposta_invalida")
+                                }
+                                CaptureStore.save(this, accountId, org.json.JSONObject()
+                                    .put("kind", "analysis-control")
+                                    .put("analysisRequest", org.json.JSONObject()
+                                        .put("requestId", requestId)
+                                        .put("accepted", result.optBoolean("accepted", false))
+                                        .put("reason", result.optString("reason", "não informado"))
+                                        .put("receivedAt", System.currentTimeMillis())
+                                        .put("details", result.optJSONObject("details") ?: org.json.JSONObject()))
+                                    .put("updatedAt", System.currentTimeMillis()))
+                            }
+                        }
                     }
                 }
             }
@@ -695,12 +723,17 @@ open class OverlayService : Service() {
             val requestedAt = System.currentTimeMillis()
             output.text = "⏳  ANALISANDO HUNTS\n\nO resultado aparecerá aqui automaticamente. Você não precisa trocar de aba."
             web?.evaluateJavascript(
-                "window.__pokeIdleRunHuntAnalysis && window.__pokeIdleRunHuntAnalysis()"
-            ) { result ->
-                if (result == "true") {
+                "window.__pokeIdleRunHuntAnalysis ? window.__pokeIdleRunHuntAnalysis() : {accepted:false,reason:'bridge_indisponivel'}"
+            ) { raw ->
+                val result = try { org.json.JSONObject(raw ?: "{}") } catch (_: Exception) { org.json.JSONObject() }
+                if (result.optBoolean("accepted", raw == "true")) {
                     pollHuntResult(0, requestedAt)
                 } else {
-                    output.text = "⚠️  Não foi possível iniciar. Abra o jogo e aguarde Pokémon, Hunts e catálogo serem carregados."
+                    output.text = when (result.optString("reason")) {
+                        "dados_indisponiveis" -> "⚠️  Dados ainda incompletos\n\nAguarde a captura de Pokémon, Hunts e catálogo do jogo."
+                        "bridge_indisponivel" -> "⚠️  Leitor ainda não ativo\n\nReabra a janela e aguarde a conexão."
+                        else -> "⚠️  Não foi possível iniciar\n\n" + result.optString("reason", "A janela não aceitou o pedido.")
+                    }
                 }
             } ?: run { output.text = "Janela do jogo indisponível." }
             return
@@ -779,7 +812,11 @@ open class OverlayService : Service() {
     }
 
     private fun pollHuntResult(attempt: Int, requestedAt: Long) {
-        if (attempt >= 40 || hunterPanel?.visibility != View.VISIBLE) return
+        if (hunterPanel?.visibility != View.VISIBLE) return
+        if (attempt >= 60) {
+            hunterResult?.text = "⚠️  A análise não terminou em 90 segundos.\n\nConfira o diagnóstico da conta e tente novamente."
+            return
+        }
         hunterQueryExecutor.execute {
             val data = CaptureStore.read(this, accountId)
             handler.post {
@@ -840,6 +877,8 @@ open class OverlayService : Service() {
                     output.text = text.toString()
                 } else if (status == "erro") {
                     output.text = "⚠️  A análise falhou\n\n" + analysis.optString("message", "Erro sem detalhes")
+                } else if (status == "sem_dados") {
+                    output.text = "⚠️  Análise concluída sem dados suficientes.\n\nConfira Pokémon com stats, Hunts e catálogo no diagnóstico."
                 } else {
                     output.text = "⏳  ANALISANDO HUNTS\n\nComparando Pokémon e Hunts liberadas…\n\nVocê não precisa trocar de aba."
                     handler.postDelayed({ pollHuntResult(attempt + 1, requestedAt) }, 1500)
