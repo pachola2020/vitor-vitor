@@ -91,6 +91,9 @@ open class OverlayService : Service() {
     private var rendererHealthCheck: Runnable? = null
     private var recoveryMessage: TextView? = null
     private val handler = Handler(Looper.getMainLooper())
+    private val hunterQueryExecutor = Executors.newSingleThreadExecutor { task ->
+        Thread(task, "HunterQuery").apply { isDaemon = true }
+    }
 
     private val flusher = object : Runnable {
         override fun run() {
@@ -173,6 +176,7 @@ open class OverlayService : Service() {
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
+        hunterQueryExecutor.shutdownNow()
         rendererRecoveryRunnable = null
         rendererHealthCheck = null
         rendererRecoveryPending = false
@@ -669,7 +673,7 @@ open class OverlayService : Service() {
             return
         }
         output.text = "Consultando os dados capturados…"
-        Thread {
+        hunterQueryExecutor.execute {
             val data = CaptureStore.read(this, accountId)
             handler.post {
                 if (hunterResult !== output || hunterPanel?.visibility != View.VISIBLE) return@post
@@ -692,9 +696,18 @@ open class OverlayService : Service() {
                         "OPORTUNIDADES\nTreinador Nv. ${player?.optInt("level", 0) ?: 0}\nHunts recebidas: $hunts\nEvento informado pelo jogo: ${event?.toString() ?: "nenhum dado disponível"}\nA detecção de encontros raros ao vivo ainda precisa de uma fonte de evento validada."
                     }
                     "xp" -> {
-                        val loja = xp?.optJSONObject("loja")
-                        val guild = xp?.optJSONObject("guild")
-                        "BÔNUS DE XP\nBônus de guilda: ${xp?.optDouble("guildBonusPct", 0.0) ?: 0.0}%\nVIP/loja: ${loja?.toString() ?: "sem dados"}\nGuilda: ${guild?.toString() ?: "sem dados"}\nTwitch: ${xp?.optJSONObject("twitch")?.toString() ?: "sem dados"}\nKick: ${xp?.optJSONObject("kick")?.toString() ?: "sem dados"}"
+                        val twitch = xp?.optJSONObject("twitch")
+                        val kick = xp?.optJSONObject("kick")
+                        val vipUntil = xp?.optJSONObject("loja")?.optLong("vipAte", 0L) ?: 0L
+                        val vipActive = vipUntil > System.currentTimeMillis() / 1000L
+                        buildString {
+                            append("BÔNUS DE XP\\n")
+                            append("Guilda: ${xp?.optDouble("guildBonusPct", 0.0) ?: 0.0}%\\n")
+                            append("VIP: ${if (vipActive) "ativo" else if (vipUntil > 0) "expirado" else "sem informação"}\\n")
+                            append("Twitch: ${if (twitch?.optBoolean("assistindo", false) == true) "+${twitch.optDouble("pctAtual", 0.0)}%" else "não ativo/sem dado"}\\n")
+                            append("Kick: ${kick?.optDouble("pct", 0.0)?.takeIf { it > 0 }?.let { "+$it%" } ?: "não ativo/sem dado"}\\n")
+                            append("Evento: ${xp?.opt("evento")?.toString() ?: "nenhum informado"}")
+                        }
                     }
                     "shiny" -> {
                         val shinyCount = session?.optInt("shinies", -1) ?: -1
