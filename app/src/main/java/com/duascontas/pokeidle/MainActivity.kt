@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.graphics.Typeface
 import android.view.Gravity
 import android.view.View
@@ -41,6 +42,7 @@ class MainActivity : Activity() {
     private lateinit var accountStatus: TextView
     private lateinit var permissionStatus: TextView
     private var selectedAccount = 1
+    private var dashboardData: org.json.JSONObject? = null
     private val accountNames = listOf("Principal", "Alt 1", "Alt 2")
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -69,6 +71,7 @@ class MainActivity : Activity() {
 
     private fun renderDashboard() {
         root.removeAllViews()
+        dashboardData = CaptureStore.read(this, selectedAccount)
 
         val top = row()
         val brand = column()
@@ -79,7 +82,7 @@ class MainActivity : Activity() {
         val version = label("TESTE\n${BuildConfig.VERSION_NAME}", 11f, MUTED, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(10), dp(8), dp(10), dp(8))
-            setBackgroundColor(PANEL_ALT)
+            background = roundedPanel(PANEL_ALT, 12)
         }
         top.addView(version)
         root.addView(top)
@@ -113,7 +116,7 @@ class MainActivity : Activity() {
         sectionTitle("VISÃO GERAL")
         val notice = column().apply {
             setPadding(dp(14), dp(13), dp(14), dp(13))
-            setBackgroundColor(PANEL)
+            background = roundedPanel(PANEL)
             addView(label(captureSummary().first, 11f, ACCENT, true))
             addView(label(captureSummary().second, 13f, TEXT))
         }
@@ -151,7 +154,7 @@ class MainActivity : Activity() {
         sectionTitle("JANELAS FLUTUANTES")
         val controls = column().apply {
             setPadding(dp(13), dp(8), dp(13), dp(8))
-            setBackgroundColor(PANEL)
+            background = roundedPanel(PANEL)
         }
         controls.addView(actionButton("Abrir conta selecionada") {
             startAccount(selectedAccount)
@@ -219,7 +222,7 @@ class MainActivity : Activity() {
     }
 
     private fun captureSummary(): Pair<String, String> {
-        val data = CaptureStore.read(this, selectedAccount)
+        val data = dashboardData
             ?: return "AGUARDANDO DADOS DO JOGO" to
                 "Abra a conta selecionada para iniciar a captura passiva. As análises detalhadas só serão executadas quando você solicitar."
         val status = data.optString("status", "unknown")
@@ -520,7 +523,7 @@ class MainActivity : Activity() {
     private fun addAnalysisOption(title: String, description: String, action: () -> Unit) {
         val option = column().apply {
             setPadding(dp(13), dp(11), dp(13), dp(11))
-            setBackgroundColor(PANEL)
+            background = roundedPanel(PANEL)
             addView(label(title, 13f, ACCENT, true))
             addView(label(description, 12f, TEXT))
             isClickable = true
@@ -544,14 +547,14 @@ class MainActivity : Activity() {
     private fun metricCard(title: String): View = column().apply {
         val display = metricDisplay(title)
         setPadding(dp(12), dp(10), dp(12), dp(10))
-        setBackgroundColor(PANEL)
+        background = roundedPanel(PANEL)
         addView(label(title, 10f, MUTED, true))
         addView(label(display.first, 25f, TEXT, true))
         addView(label(display.second, 10f, MUTED))
     }
 
     private fun metricDisplay(title: String): Pair<String, String> {
-        val data = CaptureStore.read(this, selectedAccount)
+        val data = dashboardData
         val m = data?.optJSONObject("measurements")
         val session = data?.optJSONObject("gameSession")
         val player = data?.optJSONObject("player")
@@ -591,7 +594,7 @@ class MainActivity : Activity() {
     private fun addInfoCard(title: String, description: String) {
         val card = column().apply {
             setPadding(dp(13), dp(11), dp(13), dp(11))
-            setBackgroundColor(PANEL)
+            background = roundedPanel(PANEL)
             addView(label(title, 13f, ACCENT, true))
             addView(label(description, 12f, TEXT))
         }
@@ -664,6 +667,11 @@ class MainActivity : Activity() {
 
     private fun space(height: Int) {
         root.addView(View(this), LinearLayout.LayoutParams(1, dp(height)))
+    }
+
+    private fun roundedPanel(color: Int, radiusDp: Int = 16) = GradientDrawable().apply {
+        setColor(color)
+        cornerRadius = dp(radiusDp).toFloat()
     }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
