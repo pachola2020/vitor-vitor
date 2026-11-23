@@ -64,40 +64,62 @@ object AppUpdater {
                 for (i in 0 until releases.length()) {
                     val release = releases.getJSONObject(i)
                     val tag = release.optString("tag_name")
-                    if (!release.optBoolean("prerelease") || !tag.startsWith("assistant-v")) continue
+                    if (release.optBoolean("draft") || !release.optBoolean("prerelease") ||
+                        !tag.startsWith("assistant-v")
+                    ) continue
+                    val version = tag.removePrefix("assistant-v")
+                    if (versionParts(version) == null) continue
                     val assets = release.optJSONArray("assets") ?: continue
                     for (j in 0 until assets.length()) {
                         val asset = assets.getJSONObject(j)
-                        if (asset.optString("name") == APK_NAME) {
-                            val digest = asset.optString("digest")
-                            if (!digest.startsWith("sha256:")) continue
-                            newest = UpdateInfo(
-                                tag.removePrefix("assistant-v"),
-                                asset.getString("browser_download_url"),
-                                digest.removePrefix("sha256:").lowercase()
-                            )
-                            break
+                        if (asset.optString("name") != APK_NAME) continue
+                        val digest = asset.optString("digest").removePrefix("sha256:").lowercase()
+                        val downloadUrl = asset.optString("browser_download_url")
+                        val parsedUrl = runCatching { Uri.parse(downloadUrl) }.getOrNull()
+                        if (!digest.matches(Regex("^[0-9a-f]{64}$")) ||
+                            parsedUrl?.scheme != "https" || parsedUrl.host != "github.com"
+                        ) continue
+                        if (newest == null || isNewer(version, newest!!.versionName)) {
+                            newest = UpdateInfo(version, downloadUrl, digest)
                         }
                     }
-                    if (newest != null) break
                 }
                 val available = newest?.let { info ->
                     val localName = activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "0"
-                    if (versionCodeFromName(info.versionName) > versionCodeFromName(localName)) info else null
+                    if (isNewer(info.versionName, localName)) info else null
                 }
-                main.post { if (!activity.isFinishing) onResult(available) }
+                main.post { if (!activity.isFinishing && !activity.isDestroyed) onResult(available) }
             } catch (e: Exception) {
-                main.post { if (!activity.isFinishing) onError(e.message ?: "erro desconhecido") }
+                main.post { if (!activity.isFinishing && !activity.isDestroyed) onError(e.message ?: "erro desconhecido") }
             }
         }
     }
 
-    private fun versionCodeFromName(name: String): Long =
-        name.substringBefore("-").split(".").fold(0L) { acc, part ->
-            acc * 1000 + (part.toLongOrNull() ?: 0L)
+    private fun versionParts(name: String): List<Long>? {
+        val core = name.substringBefore("-").substringBefore("+")
+        val parts = core.split(".")
+        if (parts.size != 3 || parts.any { it.isEmpty() || it.any { ch -> !ch.isDigit() } }) return null
+        return parts.map { it.toLongOrNull() ?: return null }
+    }
+
+    private fun isNewer(candidate: String, installed: String): Boolean {
+        val a = versionParts(candidate) ?: return false
+        val b = versionParts(installed) ?: return false
+        for (i in 0..2) {
+            if (a[i] != b[i]) return a[i] > b[i]
         }
+        return false
+    }
 
     fun downloadAndInstall(activity: Activity, update: UpdateInfo) {
+        val parsedUrl = runCatching { Uri.parse(update.downloadUrl) }.getOrNull()
+        if (parsedUrl?.scheme != "https" || parsedUrl.host != "github.com" ||
+            !update.sha256.matches(Regex("^[0-9a-fA-F]{64}$")) ||
+            versionParts(update.versionName) == null
+        ) {
+            Toast.makeText(activity, "Atualização inválida ou não verificável. Download cancelado.", Toast.LENGTH_LONG).show()
+            return
+        }
         var receiver: BroadcastReceiver? = null
         try {
             val manager = activity.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
