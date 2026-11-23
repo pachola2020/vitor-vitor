@@ -17,6 +17,8 @@
 - As médias ON/OFF só comparam pares com a mesma Hunt, Pokémon ativo, nível e assinatura dos bônus; amostras curtas ou com contexto alterado ficam fora das médias.
 - A duração usa o tempo ativo informado pelo jogo quando disponível, com fallback explicitamente identificado para o tempo entre marcações.
 - Telemetria passiva procura nomes/campos explícitos relacionados a Prey/presa sem presumir que a ausência desses sinais prove ausência da mecânica.
+- Leitura opcional do histórico recente de capturas mantido pelo jogo (até 100 registros, quando a chave local existir), com espécie, nível, qualidade, IV total e Shiny.
+- As amostras Prey mostram capturas por espécie/h e indicam quando o histórico recente cobre apenas parte do intervalo.
 
 ## Interface e desempenho
 
@@ -29,7 +31,8 @@
 
 ## Limitações importantes
 
-- Não encontrei documentação pública oficial verificável que descreva uma mecânica chamada Prey ou sua fórmula. O módulo é um instrumento de teste A/B manual: a condição ON/OFF é declarada pelo usuário, não controlada pelo app. Uma diferença observada não prova causalidade.
+- Não encontrei documentação pública verificável que descreva a mecânica Prey ou sua fórmula. O módulo é um instrumento de teste A/B manual: a condição ON/OFF é declarada pelo usuário, não controlada pelo app. Uma diferença observada não prova causalidade.
+- O histórico de capturas usa um formato de armazenamento descrito por ferramenta comunitária; a presença e a cobertura desses registros precisam ser confirmadas no jogo de cada conta. O contador geral de capturas permanece a referência quando o histórico detalhado estiver ausente/incompleto.
 - O app ainda precisa ser testado dentro do jogo em cada conta. O recibo de pedido melhora a identificação do ponto de falha, mas não comprova que a análise da Principal já funciona no aparelho.
 - O Hunt Analyzer continua sendo uma estimativa teórica; geometria real e frequência de spawn precisam de validação prática.
 - Nenhuma compra, venda, anúncio ou ação automática é executada.
