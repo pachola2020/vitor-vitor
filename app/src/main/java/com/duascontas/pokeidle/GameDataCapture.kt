@@ -47,7 +47,20 @@ object GameDataCapture {
                     val appContext = context.applicationContext
                     persistenceExecutor.execute {
                         try {
-                            val payload = JSONObject(raw)
+                            var payload = JSONObject(raw)
+                            val replaceSnapshot = payload.optBoolean("_replaceSnapshot", false)
+                            payload.remove("_replaceSnapshot")
+                            if (!replaceSnapshot) {
+                                val previous = CaptureStore.read(appContext, accountId)
+                                if (previous != null) {
+                                    val keys = payload.keys()
+                                    while (keys.hasNext()) {
+                                        val key = keys.next()
+                                        previous.put(key, payload.opt(key))
+                                    }
+                                    payload = previous
+                                }
+                            }
                             payload.put("accountId", accountId)
                             payload.put("updatedAt", System.currentTimeMillis())
                             CaptureStore.save(appContext, accountId, payload)
@@ -90,6 +103,7 @@ object GameDataCapture {
   let marketData = null;
   let fieldData = null;
   let catalogData = null;
+  let staticSnapshotSent = false;
   let sessionDiagnostics = { available: false, keys: [] };
   // Estatísticas oficiais da sessão que o próprio jogo mantém no armazenamento local.
   // Só são lidos contadores de jogo; nunca cookies, tokens ou credenciais.
@@ -680,7 +694,7 @@ object GameDataCapture {
     const guild = state.guild || {};
     const twitch = state.twitch || null;
     const kick = state.kick || null;
-    send({
+    const payload = {
       kind, status: 'connected', connected: true, ready: true,
       nick: state.nick ?? null, level: state.level,
       coinsBalance: coinData.value, currencySource: coinData.source,
@@ -706,20 +720,12 @@ object GameDataCapture {
         nivelPokemon: active?.level ?? null, minutos: metrics.sampleMinutes,
         xpPokemonH: metrics.xpPokemonH
       },
-      hunts: hunts.map(h => ({
-        slug: h.slug, nome: h.nome, nivel: h.nivel,
-        regiao: h.regiao, area: h.area,
-        especies: Array.isArray(h.especies) ? h.especies.map(e => ({
-          pokeId: e.pokeId, pontos: e.pontos
-        })) : []
-      })),
       player: {
         level: state.level, xp: Number(state.xp) || 0, outlandTier: state.outlandTier ?? null,
         coins: coinData.value, gold: coinData.value,
         activeId: state.activeId, huntSlug: state.huntSlug,
         activePokemon: active, pokemonCount: pokemons.length, pokemons
       },
-      catalog: catalogData,
       gameSession: readGameSession(),
       huntAnalysis,
       measurements: metrics, market: marketData, fieldData,
@@ -735,7 +741,20 @@ object GameDataCapture {
         gameSessionAvailable: sessionDiagnostics.available,
         gameSessionKeys: sessionDiagnostics.keys
       }
-    });
+    };
+    if (!staticSnapshotSent || kind === 'welcome') {
+      payload.hunts = hunts.map(h => ({
+        slug: h.slug, nome: h.nome, nivel: h.nivel,
+        regiao: h.regiao, area: h.area,
+        especies: Array.isArray(h.especies) ? h.especies.map(e => ({
+          pokeId: e.pokeId, pontos: e.pontos
+        })) : []
+      }));
+      payload.catalog = catalogData;
+      payload._replaceSnapshot = true;
+      staticSnapshotSent = true;
+    }
+    send(payload);
   };
   const merge = (partial) => {
     if (!partial) return;
