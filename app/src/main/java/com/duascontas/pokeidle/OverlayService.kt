@@ -739,7 +739,7 @@ open class OverlayService : Service() {
                     else -> "Consulta indisponível."
                 }
             }
-        }.start()
+        }
     }
 
     private fun smallButton(label: String): TextView {
