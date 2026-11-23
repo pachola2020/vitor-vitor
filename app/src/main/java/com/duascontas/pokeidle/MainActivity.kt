@@ -673,52 +673,111 @@ class MainActivity : Activity() {
         fun amount(value: Any?): Long? {
             if (value == null || value == org.json.JSONObject.NULL) return null
             if (value is Number) return value.toLong()
-            val digits = value.toString().filter { it.isDigit() }
-            return digits.toLongOrNull()
+            return value.toString().filter { it.isDigit() }.toLongOrNull()
+        }
+        fun currencyLabel(currency: String): String = when {
+            currency.contains("orb") || currency.contains("gem") -> "Gemas"
+            currency.contains("gold") || currency.contains("coin") -> "Coins"
+            else -> currency.ifBlank { "moeda não identificada" }
+        }
+        val tab = market.optString("aba", "")
+        val isSalesHistory = tab == "historicoGlobal"
+        val isActiveListings = tab == "vitrine" || tab == "meus"
+        data class SaleSample(val price: Long, val currency: String, val isPokemon: Boolean, val name: String)
+        val samples = mutableListOf<SaleSample>()
+        for (i in 0 until linesArray.length()) {
+            val item = linesArray.optJSONObject(i) ?: continue
+            val ficha = item.optJSONObject("ficha")
+            val currency = item.optString("moeda", "").lowercase()
+            val price = amount(item.opt("bruto") ?: item.opt("preco")) ?: continue
+            if (price <= 0L) continue
+            val isPokemon = ficha != null && (ficha.has("speciesId") || ficha.has("level"))
+            val name = ficha?.optString("nome")?.takeIf { it.isNotBlank() }
+                ?: item.optString("nome", if (isPokemon) "Pokémon" else "Registro")
+            samples.add(SaleSample(price, currency, isPokemon, name))
         }
         val lines = buildString {
-            appendLine("Aba: ${market.optString("aba", "não identificada")} · Página: ${market.optInt("pagina", 0)}")
-            appendLine("Registros observados: ${linesArray.length()} · Total informado: ${market.optInt("total", 0)}")
+            appendLine("ORIGEM DOS DADOS")
+            appendLine("Aba: ${tab.ifBlank { "não identificada" }} · Capturado em: ${market.optLong("atualizadoEm", 0L).takeIf { it > 0L }?.let { java.text.SimpleDateFormat("dd/MM HH:mm", java.util.Locale("pt", "BR").apply { })?.format(java.util.Date(it)) } ?: "horário indisponível"}")
+            appendLine("Registros guardados: ${linesArray.length()} · Total informado pelo jogo: ${market.optInt("total", 0)}")
             appendLine("Páginas observadas: ${market.optJSONArray("paginasObservadas")?.length() ?: 1}")
             appendLine()
-            for (i in 0 until minOf(linesArray.length(), 25)) {
+            when {
+                isSalesHistory -> {
+                    appendLine("VENDAS CONCLUÍDAS · HISTÓRICO DO JOGO")
+                    appendLine("Somente registros desta aba entram nas estatísticas de vendas. A captura pode conter apenas parte do histórico.")
+                    appendLine()
+                    for (currency in listOf("orb", "gold")) {
+                        val group = samples.filter { it.currency.contains(currency) }
+                        if (group.isEmpty()) continue
+                        val sorted = group.map { it.price }.sorted()
+                        val median = sorted[sorted.size / 2]
+                        val volume = group.sumOf { it.price }
+                        val estimatedNet = group.sumOf { sample ->
+                            val rate = when {
+                                sample.currency.contains("orb") && sample.isPokemon && sample.price <= 500L -> 0.13
+                                sample.currency.contains("orb") && sample.isPokemon && sample.price <= 5000L -> 0.10
+                                sample.currency.contains("orb") && sample.isPokemon -> 0.075
+                                else -> 0.15
+                            }
+                            (sample.price * (1.0 - rate)).toLong()
+                        }
+                        appendLine("${currencyLabel(currency)} · ${group.size} vendas observadas")
+                        appendLine("Volume bruto: ${"%,d".format(volume)} · Mediana: ${"%,d".format(median)}")
+                        appendLine("Líquido estimado após comissão do jogo: ${"%,d".format(estimatedNet)}")
+                        if (currency == "orb") appendLine("Gemas líquidas ainda não são BRL: saque/conversão têm etapa e spread próprios.")
+                        appendLine()
+                    }
+                    val pokemonSales = samples.count { it.isPokemon }
+                    val itemSales = samples.size - pokemonSales
+                    appendLine("Composição: $pokemonSales vendas de Pokémon · $itemSales vendas de itens")
+                    appendLine("A mediana é calculada sobre os registros capturados, não sobre vendas futuras nem sobre todo o mercado.")
+                }
+                isActiveListings -> {
+                    appendLine("ANÚNCIOS ATIVOS · NÃO SÃO VENDAS")
+                    appendLine("Estes valores representam preços pedidos pelos vendedores. Não entram no volume vendido nem em receita realizada.")
+                    val groups = samples.groupBy { it.currency }
+                    for ((currency, group) in groups) {
+                        val prices = group.map { it.price }.sorted()
+                        appendLine("${currencyLabel(currency)} · ${group.size} anúncios com preço legível")
+                        appendLine("Faixa anunciada: ${"%,d".format(prices.first())}–${"%,d".format(prices.last())}")
+                    }
+                }
+                else -> {
+                    appendLine("TIPO DE REGISTRO NÃO CONFIRMADO")
+                    appendLine("Não vou classificar estes valores como vendas concluídas nem como receita. Abra a Tabela de preços do jogo para consultar o histórico de vendas.")
+                }
+            }
+            appendLine()
+            appendLine("AMOSTRA CAPTURADA")
+            for (i in 0 until minOf(linesArray.length(), 18)) {
                 val item = linesArray.optJSONObject(i) ?: continue
                 val ficha = item.optJSONObject("ficha")
                 val name = ficha?.optString("nome")?.takeIf { it.isNotBlank() } ?: item.optString("nome", "Registro")
-                val priceRaw = item.opt("preco") ?: item.opt("bruto")
-                val gross = amount(priceRaw)
-                val currency = item.optString("moeda", "").lowercase()
-                val isPokemon = ficha != null && (ficha.has("speciesId") || ficha.has("level"))
-                val currencyLabel = when {
-                    currency.contains("gem") -> "Gems"
-                    currency.contains("coin") || currency.contains("gold") -> "Coins"
-                    else -> currency.ifBlank { "moeda não identificada" }
-                }
-                appendLine("$name · ${gross?.let { "%,d".format(it) } ?: "preço —"} $currencyLabel")
-                appendLine("  Status observado: ${item.optString("status", "não informado")}")
-                if (gross != null && (currency.contains("gem") || currency.contains("coin") || currency.contains("gold"))) {
-                    val feeRate = when {
-                        currency.contains("gem") && isPokemon && gross <= 500L -> 0.13
-                        currency.contains("gem") && isPokemon && gross <= 5000L -> 0.10
-                        currency.contains("gem") && isPokemon -> 0.075
-                        else -> 0.15
+                val price = amount(item.opt("bruto") ?: item.opt("preco"))
+                val currency = item.optString("moeda", "")
+                appendLine("$name · ${price?.let { "%,d".format(it) } ?: "preço —"} ${currencyLabel(currency)}")
+                if (isSalesHistory) {
+                    val isPokemon = ficha != null && (ficha.has("speciesId") || ficha.has("level"))
+                    if (price != null && price > 0L) {
+                        val rate = when {
+                            currency.contains("orb", true) && isPokemon && price <= 500L -> 0.13
+                            currency.contains("orb", true) && isPokemon && price <= 5000L -> 0.10
+                            currency.contains("orb", true) && isPokemon -> 0.075
+                            currency.contains("orb", true) || currency.contains("gold", true) -> 0.15
+                            else -> 0.0
+                        }
+                        if (rate > 0.0) appendLine("  Comissão aproximada: ${(rate * 100).toInt()}% · Líquido estimado: ${"%,d".format((price * (1.0 - rate)).toLong())}")
                     }
-                    val fee = if (currency.contains("gem")) kotlin.math.ceil(gross * feeRate).toLong() else (gross * feeRate).toLong()
-                    appendLine("  Comissão estimada: ${"%,d".format(fee)} (${(feeRate * 100).toInt()}%)")
-                    appendLine("  Líquido estimado se vender: ${"%,d".format((gross - fee).coerceAtLeast(0L))} $currencyLabel")
+                } else {
+                    appendLine("  Status observado: ${item.optString("status", "não informado")}")
                 }
-                if (isPokemon) {
-                    val days = item.optInt("dias", item.optInt("duracao", 0)).coerceIn(0, 30)
-                    if (days > 0) appendLine("  Custo do anúncio: ${"%,d".format(days * 100000L)} Coins (100.000/dia)")
-                }
-                val serverNet = amount(item.opt("liquido") ?: item.opt("valorLiquido"))
-                if (serverNet != null) appendLine("  Líquido informado pelo jogo: ${"%,d".format(serverNet)}")
             }
-            if (linesArray.length() > 25) appendLine("… e mais ${linesArray.length() - 25} registros.")
+            if (linesArray.length() > 18) appendLine("… e mais ${linesArray.length() - 18} registros.")
             appendLine()
-            append("As comissões são estimativas baseadas nos Termos atuais. Anúncio ativo não é venda concluída; só o status/histórico confirmado permite contabilizar uma venda. Nenhuma ação é executada.")
+            append("Leitura passiva: nenhuma compra, venda ou publicação é executada. Nenhum nick de jogador é exibido.")
         }
-        showDialog("Mercado · custos e líquido", lines)
+        showDialog(if (isSalesHistory) "Mercado · vendas observadas" else "Mercado · leitura de registros", lines)
     }
 
     private fun addAnalysisOption(title: String, description: String, action: () -> Unit) {
