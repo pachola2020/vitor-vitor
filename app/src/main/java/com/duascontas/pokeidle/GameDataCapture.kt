@@ -82,6 +82,7 @@ object GameDataCapture {
   let samples = [];
   let kills = [];
   let marketData = null;
+  let fieldData = null;
   let catalogData = null;
   const diagnostics = {
     socketSeen: 0, textFrames: 0, jsonFrames: 0, binaryFrames: 0,
@@ -101,6 +102,21 @@ object GameDataCapture {
     }
     out.ficha = ficha;
     return out;
+  };
+  const sanitizeField = (value, depth = 0) => {
+    if (depth > 4 || value == null) return null;
+    if (typeof value === 'string') return value.slice(0, 120);
+    if (typeof value === 'number' || typeof value === 'boolean') return value;
+    if (Array.isArray(value)) return value.slice(0, 80).map(v => sanitizeField(v, depth + 1));
+    if (typeof value === 'object') {
+      const out = {};
+      for (const key of Object.keys(value).slice(0, 100)) {
+        if (/token|cookie|auth|password|senha|email|session|credential/i.test(key)) continue;
+        out[key] = sanitizeField(value[key], depth + 1);
+      }
+      return out;
+    }
+    return null;
   };
   const safePokemon = (p) => {
     if (!p || typeof p !== 'object' || Array.isArray(p)) return null;
@@ -236,7 +252,7 @@ object GameDataCapture {
         activePokemon: active, pokemonCount: pokemons.length, pokemons
       },
       catalog: catalogData,
-      measurements: metrics, market: marketData,
+      measurements: metrics, market: marketData, fieldData,
       diagnostics: {
         ...diagnostics,
         huntsWithSpecies: hunts.filter(h => Array.isArray(h.especies) && h.especies.length > 0).length,
@@ -407,7 +423,9 @@ object GameDataCapture {
             } else if (msg.t === 'campo' || msg.t === 'campo.init') {
               diagnostics.field++;
               diagnostics.fieldMessageKeys = Object.keys(msg).slice(0, 30);
-              publish('field');
+              fieldData = { type: msg.t, capturedAt: Date.now(), payload: sanitizeField(msg) };
+              diagnostics.fieldDataKeys = Object.keys(fieldData.payload || {}).slice(0, 40);
+              publish('field', true);
             }
           });
         }
