@@ -673,8 +673,10 @@ object GameDataCapture {
   // A análise pesada só é iniciada quando o usuário solicita pelo painel nativo.
   window.__pokeIdleRunHuntAnalysis = () => {
     if (!state || !Array.isArray(state.pokemons) || !state.pokemons.length || !hunts.length || !catalogData) return false;
+    if (analysisBusy || analysisScheduled) return false;
+    lastAnalysisKey = '';
     scheduleHuntAnalysis();
-    return true;
+    return analysisScheduled;
   };
 
   const publish = (kind, force = false) => {
