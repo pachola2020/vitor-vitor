@@ -20,6 +20,9 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import android.app.AlertDialog
+import android.os.Handler
+import android.os.Looper
+import java.util.concurrent.Executors
 
 /**
  * Painel inicial do PokeIdle Assistant.
@@ -39,17 +42,22 @@ class MainActivity : Activity() {
     }
 
     private lateinit var root: LinearLayout
+    private lateinit var dashboardScroll: ScrollView
     private lateinit var accountStatus: TextView
     private lateinit var permissionStatus: TextView
     private var selectedAccount = 1
     private var dashboardData: org.json.JSONObject? = null
     private var dashboardLoadGeneration = 0
+    private var huntPollGeneration = 0
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val dashboardIo = Executors.newSingleThreadExecutor { task -> Thread(task, "DashboardIO").apply { isDaemon = true } }
     private val accountNames = listOf("Principal", "Alt 1", "Alt 2")
+    private val accountRoles = listOf("PvP · PvE · Bosses · conteúdo geral", "Farm · Bosses · PvP ocasional", "Farm · Bosses · PvP ocasional")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val scroll = ScrollView(this).apply {
+        dashboardScroll = ScrollView(this).apply {
             setBackgroundColor(BG)
             isFillViewport = true
         }
@@ -57,9 +65,16 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(22), dp(18), dp(28))
         }
-        scroll.addView(root)
-        setContentView(scroll)
+        dashboardScroll.addView(root)
+        setContentView(dashboardScroll)
         renderDashboard()
+    }
+
+    override fun onDestroy() {
+        huntPollGeneration++
+        mainHandler.removeCallbacksAndMessages(null)
+        dashboardIo.shutdownNow()
+        super.onDestroy()
     }
 
     override fun onResume() {
@@ -150,6 +165,14 @@ class MainActivity : Activity() {
         space(10)
         accountStatus = label("Conta selecionada: ${accountNames[selectedAccount - 1]} · sessão independente", 12f, MUTED)
         root.addView(accountStatus)
+        val roleCard = column().apply {
+            setPadding(dp(13), dp(10), dp(13), dp(10))
+            background = roundedPanel(PANEL_ALT, 13)
+            addView(label("FOCO DESTA CONTA", 10f, ACCENT, true))
+            addView(label(accountRoles[selectedAccount - 1], 13f, TEXT, true))
+            addView(label(if (selectedAccount == 1) "Preservar versatilidade: não sacrificar PvP e Boss por um farm específico." else "Priorizar eficiência de farm; manter opções para Boss e PvP quando fizer sentido.", 11f, MUTED))
+        }
+        root.addView(roleCard)
         space(18)
 
         sectionTitle("VISÃO GERAL")
@@ -186,8 +209,9 @@ class MainActivity : Activity() {
         sectionTitle("ANÁLISES")
         addAnalysisOption("PROGRESSÃO", "XP, Gold, abates, sobrevivência e variação do saldo", ::showProgressionDetails)
         addAnalysisOption("HUNTS", "Hunts liberadas, níveis e Hunt atual da conta", ::showHuntDetails)
-        addAnalysisOption("HUNT ANALYZER", "Ranking preliminar por Pokémon: XP/h, Gold/h, abates/h e cenário AoE", ::showHuntAnalyzerDetails)
+        addAnalysisOption("HUNT ANALYZER", "Compare a melhor Hunt de cada Pokémon, com e sem AoE", ::openHuntAnalyzer)
         root.addView(actionButton("Calcular Hunt Analyzer agora", true) { requestHuntAnalysis() })
+        if (dashboardData?.optJSONObject("huntAnalysis")?.optString("status") == "estimativa_disponivel") addHuntAnalysisInline()
         addAnalysisOption("POKÉMON", "Equipe, Pokémon ativo, nível, IVs e atributos recebidos", ::showPokemonDetails)
         addAnalysisOption("SHINY HUNT", "Bolas usadas, Shinies vistos e Shinies registrados na sessão", ::showShinyDetails)
         addAnalysisOption("MERCADO", "Registros capturados da aba aberta no Mercado", ::showMarketDetails)
@@ -401,12 +425,19 @@ class MainActivity : Activity() {
         showDialog("Hunts", lines)
     }
 
+
+    private fun openHuntAnalyzer() {
+        val ready = dashboardData?.optJSONObject("huntAnalysis")?.optString("status") == "estimativa_disponivel"
+        if (ready) dashboardScroll.post { dashboardScroll.fullScroll(View.FOCUS_DOWN) } else requestHuntAnalysis()
+    }
+
     private fun requestHuntAnalysis() {
         val requestedAt = System.currentTimeMillis()
         val account = selectedAccount
+        val generation = ++huntPollGeneration
         val progress = AlertDialog.Builder(this)
             .setTitle("Analisando Hunts")
-            .setMessage("Comparando seus Pokémon com as Hunts liberadas. O resultado aparecerá aqui, sem trocar de aba.")
+            .setMessage("Comparando seus Pokémon com as Hunts liberadas. O resultado aparecerá nesta tela.")
             .setNegativeButton("Fechar", null)
             .create()
         progress.show()
@@ -414,39 +445,81 @@ class MainActivity : Activity() {
             .setPackage(packageName)
             .putExtra("accountId", account)
         sendBroadcast(intent)
-        pollDashboardHuntAnalysis(account, requestedAt, 0, progress)
+        pollDashboardHuntAnalysis(account, requestedAt, 0, generation, progress)
     }
 
-    private fun pollDashboardHuntAnalysis(account: Int, requestedAt: Long, attempt: Int, progress: AlertDialog) {
-        if (isFinishing || attempt >= 40 || account != selectedAccount) {
+    private fun pollDashboardHuntAnalysis(account: Int, requestedAt: Long, attempt: Int, generation: Int, progress: AlertDialog) {
+        if (isFinishing || generation != huntPollGeneration || attempt >= 40 || account != selectedAccount) {
             if (progress.isShowing) progress.dismiss()
-            if (attempt >= 40) showDialog("Hunt Analyzer", "A análise ainda não terminou. Mantenha a janela da conta aberta e tente consultar novamente.")
+            if (attempt >= 40 && generation == huntPollGeneration) showDialog("Hunt Analyzer", "A análise ainda não terminou. Mantenha a janela da conta aberta e tente consultar novamente.")
             return
         }
-        Thread {
+        dashboardIo.execute {
             val snapshot = CaptureStore.read(this, account)
-            runOnUiThread {
-                if (isFinishing || account != selectedAccount) {
+            mainHandler.post {
+                if (isFinishing || generation != huntPollGeneration || account != selectedAccount) {
                     if (progress.isShowing) progress.dismiss()
-                    return@runOnUiThread
+                    return@post
                 }
                 val analysis = snapshot?.optJSONObject("huntAnalysis")
                 if (analysis != null && analysis.optString("status") == "estimativa_disponivel" &&
                     analysis.optLong("calculadoEm", 0L) >= requestedAt) {
                     dashboardData = snapshot
                     if (progress.isShowing) progress.dismiss()
-                    showHuntAnalyzerDetails()
+                    renderDashboard(loadSnapshot = false)
+                    dashboardScroll.post { dashboardScroll.fullScroll(View.FOCUS_DOWN) }
                 } else if (analysis?.optString("status") == "erro") {
                     if (progress.isShowing) progress.dismiss()
                     showDialog("Hunt Analyzer", analysis.optString("message", "Não foi possível concluir a análise."))
                 } else {
-                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(
-                        { pollDashboardHuntAnalysis(account, requestedAt, attempt + 1, progress) }, 1500
-                    )
+                    mainHandler.postDelayed({ pollDashboardHuntAnalysis(account, requestedAt, attempt + 1, generation, progress) }, 1500)
                 }
             }
-        }.start()
+        }
     }
+
+    private fun addHuntAnalysisInline() {
+        val analysis = dashboardData?.optJSONObject("huntAnalysis") ?: return
+        val pokemon = analysis.optJSONArray("pokemon") ?: return
+        if (pokemon.length() == 0) return
+        val header = column().apply {
+            setPadding(dp(14), dp(13), dp(14), dp(13))
+            background = roundedPanel(PANEL_ALT, 14)
+            addView(label("RESULTADO DISPONÍVEL", 10f, ACCENT, true))
+            addView(label("Comparativo por Pokémon · Nv. treinador ${analysis.optInt("nivelTreinador", 0)}", 13f, TEXT, true))
+            addView(label("${analysis.optInt("pokemonAnalisados", 0)} Pokémon analisados. Estimativas teóricas; confirme no farm real antes de investir.", 11f, MUTED))
+        }
+        root.addView(header)
+        space(8)
+        for (i in 0 until minOf(pokemon.length(), 8)) {
+            val p = pokemon.optJSONObject(i) ?: continue
+            val noAoe = p.optJSONObject("melhorXpSemAoe")
+            val withAoe = p.optJSONObject("melhorXpComAoe")
+            val gold = p.optJSONObject("melhorGold")
+            val card = column().apply {
+                setPadding(dp(13), dp(11), dp(13), dp(11))
+                background = roundedPanel(PANEL, 14)
+                val active = if (p.optBoolean("ativo")) " · ATIVO" else ""
+                addView(label("${p.optString("nome", "Pokémon")} · Nv. ${p.optInt("level", 0)}$active", 14f, TEXT, true))
+                if (noAoe != null) {
+                    addView(label("SEM AoE · ${noAoe.optString("nome")}", 10f, MUTED, true))
+                    addView(label("XP ${"%,d".format(noAoe.optLong("xpPokemonH"))}/h   ·   Gold ${"%,d".format(noAoe.optLong("goldH"))}/h", 12f, TEXT))
+                    addView(label("${"%,d".format(noAoe.optLong("abatesH"))} abates/h", 10f, MUTED))
+                }
+                if (withAoe != null) {
+                    val labelAoe = if (p.optBoolean("tmAoe")) "COM AoE · equipada" else "COM AoE · hipótese"
+                    addView(label("$labelAoe · ${withAoe.optString("nome")}", 10f, ACCENT, true))
+                    addView(label("XP ${"%,d".format(withAoe.optLong("xpPokemonHAoeHipotetico"))}/h   ·   Gold ${"%,d".format(withAoe.optLong("goldHAoeHipotetico"))}/h", 12f, TEXT))
+                    addView(label("${"%,d".format(withAoe.optLong("abatesHAoeHipotetico"))} abates/h", 10f, MUTED))
+                }
+                if (gold != null) addView(label("Melhor Gold sem AoE: ${gold.optString("nome")}", 10f, MUTED))
+            }
+            root.addView(card)
+            space(7)
+        }
+        root.addView(actionButton("Ver limitações e detalhes do cálculo", false) { showHuntAnalyzerDetails() })
+    }
+
     private fun showHuntAnalyzerDetails() {
         val data = dashboardData
         val analysis = data?.optJSONObject("huntAnalysis")
@@ -667,11 +740,11 @@ class MainActivity : Activity() {
 
     private fun metricCard(title: String): View = column().apply {
         val display = metricDisplay(title)
-        setPadding(dp(12), dp(10), dp(12), dp(10))
-        background = roundedPanel(PANEL)
-        addView(label(title, 10f, MUTED, true))
-        addView(label(display.first, 25f, TEXT, true))
-        addView(label(display.second, 10f, MUTED))
+        setPadding(dp(12), dp(11), dp(12), dp(11))
+        background = roundedPanel(PANEL, 14)
+        addView(label(title, 9f, ACCENT, true))
+        addView(label(display.first, 23f, TEXT, true))
+        addView(label(display.second, 9f, MUTED))
     }
 
     private fun metricDisplay(title: String): Pair<String, String> {
