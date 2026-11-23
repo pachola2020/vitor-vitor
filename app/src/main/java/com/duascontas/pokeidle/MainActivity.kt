@@ -76,7 +76,7 @@ class MainActivity : Activity() {
         brand.addView(label("Assistant", 28f, TEXT, true))
         brand.addView(label("Painel pessoal de acompanhamento", 13f, MUTED))
         top.addView(brand, LinearLayout.LayoutParams(0, -2, 1f))
-        val version = label("TESTE\n0.5.11", 11f, MUTED, true).apply {
+        val version = label("TESTE\n0.5.12", 11f, MUTED, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(10), dp(8), dp(10), dp(8))
             setBackgroundColor(PANEL_ALT)
@@ -141,6 +141,7 @@ class MainActivity : Activity() {
         sectionTitle("ANÁLISES")
         addAnalysisOption("PROGRESSÃO", "XP, Gold, abates, sobrevivência e variação do saldo", ::showProgressionDetails)
         addAnalysisOption("HUNTS", "Hunts liberadas, níveis e Hunt atual da conta", ::showHuntDetails)
+        addAnalysisOption("HUNT ANALYZER", "Ranking preliminar por Pokémon: XP/h, Gold/h, abates/h e cenário AoE", ::showHuntAnalyzerDetails)
         addAnalysisOption("POKÉMON", "Equipe, Pokémon ativo, nível, IVs e atributos recebidos", ::showPokemonDetails)
         addAnalysisOption("SHINY HUNT", "Bolas usadas, Shinies vistos e Shinies registrados na sessão", ::showShinyDetails)
         addAnalysisOption("MERCADO", "Registros capturados da aba aberta no Mercado", ::showMarketDetails)
@@ -353,6 +354,65 @@ class MainActivity : Activity() {
             append("Esta tela lista os dados recebidos; o ranking comparativo e a simulação com/sem AoE ainda não estão conectados.")
         }
         showDialog("Hunts", lines)
+    }
+
+    private fun showHuntAnalyzerDetails() {
+        val data = CaptureStore.read(this, selectedAccount)
+        val analysis = data?.optJSONObject("huntAnalysis")
+        if (analysis == null) {
+            showDialog("Hunt Analyzer", "Ainda não há resultado. Abra a conta e aguarde o catálogo oficial ser carregado.")
+            return
+        }
+        val status = analysis.optString("status", "")
+        if (status != "estimativa_disponivel") {
+            showDialog("Hunt Analyzer", analysis.optString("message", "O analisador ainda não conseguiu calcular."))
+            return
+        }
+        val pokemon = analysis.optJSONArray("pokemon")
+        if (pokemon == null || pokemon.length() == 0) {
+            showDialog("Hunt Analyzer", "Não encontrei Pokémon com espécie e atributos suficientes para simular.")
+            return
+        }
+        val lines = buildString {
+            appendLine("Treinador Nv. \${analysis.optInt("nivelTreinador", 0)} · Pokémon analisados: \${analysis.optInt("pokemonAnalisados", 0)}")
+            appendLine("Modelo: estimativa teórica preliminar")
+            appendLine()
+            for (i in 0 until minOf(pokemon.length(), 12)) {
+                val p = pokemon.optJSONObject(i) ?: continue
+                appendLine("━━ \${p.optString("nome", "Pokémon")} · Nv. \${p.optInt("level", 0)} \${if (p.optBoolean("tmAoe")) "· AoE equipado" else ""}")
+                val best = p.optJSONObject("melhorXp")
+                if (best == null) {
+                    appendLine("  Sem Hunt liberada com dados suficientes.")
+                    appendLine()
+                    continue
+                }
+                appendLine("  Melhor XP: \${best.optString("nome")} (Nv. \${best.optInt("nivel")})")
+                appendLine("  XP Pokémon/h: \${"%,d".format(best.optLong("xpPokemonH"))}")
+                appendLine("  XP treinador/h: \${"%,d".format(best.optLong("xpTreinadorH"))}")
+                appendLine("  Gold/h: \${"%,d".format(best.optLong("goldH"))}")
+                appendLine("  Abates/h: \${"%,d".format(best.optLong("abatesH"))} · TTK: \${best.optDouble("ttkEstimado", 0.0)} s")
+                appendLine("  AoE hipotético: \${"%,d".format(best.optLong("xpPokemonHAoeHipotetico"))} XP Pokémon/h")
+                val goldBest = p.optJSONObject("melhorGold")
+                if (goldBest != null && goldBest.optString("slug") != best.optString("slug")) {
+                    appendLine("  Melhor Gold: \${goldBest.optString("nome")} · \${"%,d".format(goldBest.optLong("goldH"))}/h")
+                }
+                val top = p.optJSONArray("topHunts")
+                if (top != null && top.length() > 1) {
+                    appendLine("  Próximas Hunts:")
+                    for (j in 1 until minOf(top.length(), 4)) {
+                        val h = top.optJSONObject(j) ?: continue
+                        appendLine("    \${j + 1}. \${h.optString("nome")} · \${"%,d".format(h.optLong("xpPokemonH"))} XP/h")
+                    }
+                }
+                appendLine()
+            }
+            appendLine("LIMITAÇÕES IMPORTANTES")
+            appendLine("• Catálogo oficial carregado do jogo; fórmula de dano preliminar.")
+            appendLine("• Ritmo de caminhada e densidade ainda usam referência genérica, não geometria medida desta Hunt.")
+            appendLine("• AoE mostra cenário hipotético de 2,2 alvos por golpe; não é medição real.")
+            appendLine("• Não substitui validação em Hunt real. Use para triagem, não como garantia de rendimento.")
+        }
+        showDialog("Hunt Analyzer · estimativas", lines)
     }
 
     private fun showPokemonDetails() {
