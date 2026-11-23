@@ -794,24 +794,47 @@ open class OverlayService : Service() {
                     text.append(analysis.optInt("pokemonAnalisados", 0)).append(" Pokémon analisados\n")
                     text.append("Estimativa teórica · confiança baixa · não é medição real\n\n")
                     if (pokemon != null) {
-                        for (i in 0 until minOf(3, pokemon.length())) {
-                            val p = pokemon.optJSONObject(i) ?: continue
-                            text.append("━━━━━━━━━━━━━━━━\n")
-                            text.append("🔹 ").append(p.optString("nome", "Pokémon"))
-                                .append(" Nv.").append(p.optInt("level", 0)).append("\n")
-                            val noAoe = p.optJSONObject("melhorXpSemAoe")
-                            val aoe = p.optJSONObject("melhorXpComAoe")
-                            if (noAoe != null) {
-                                text.append("SEM AoE · ").append(noAoe.optString("nome")).append("\n")
-                                text.append("XP Pokémon ").append("%,d".format(noAoe.optLong("xpPokemonH"))).append("/h · XP treinador ").append("%,d".format(noAoe.optLong("xpTreinadorH"))).append("/h\n")
-                                text.append("Gold ").append("%,d".format(noAoe.optLong("goldH"))).append("/h · ").append("%,d".format(noAoe.optLong("abatesH"))).append(" abates/h\n")
+                        fun appendBest(title: String, metric: String, aoe: Boolean) {
+                            var bestValue = -1L
+                            var bestPokemon = ""
+                            var bestHunt = ""
+                            for (i in 0 until pokemon.length()) {
+                                val p = pokemon.optJSONObject(i) ?: continue
+                                val result = when {
+                                    metric == "gold" && aoe -> p.optJSONObject("melhorGoldComAoe")
+                                    metric == "gold" -> p.optJSONObject("melhorGold")
+                                    aoe -> p.optJSONObject("melhorXpComAoe")
+                                    else -> p.optJSONObject("melhorXpSemAoe")
+                                } ?: continue
+                                val key = when {
+                                    metric == "gold" && aoe -> "goldHAoeHipotetico"
+                                    metric == "gold" -> "goldH"
+                                    metric == "trainer" && aoe -> "xpTreinadorHAoeHipotetico"
+                                    metric == "trainer" -> "xpTreinadorH"
+                                    aoe -> "xpPokemonHAoeHipotetico"
+                                    else -> "xpPokemonH"
+                                }
+                                val value = result.optLong(key, -1L)
+                                if (value > bestValue) {
+                                    bestValue = value
+                                    bestPokemon = p.optString("nome", "Pokémon")
+                                    bestHunt = result.optString("nome", "Hunt")
+                                }
                             }
-                            if (aoe != null) {
-                                text.append("COM AoE (hipótese) · ").append(aoe.optString("nome")).append("\n")
-                                text.append("XP Pokémon ").append("%,d".format(aoe.optLong("xpPokemonHAoeHipotetico"))).append("/h · XP treinador ").append("%,d".format(aoe.optLong("xpTreinadorHAoeHipotetico"))).append("/h\n")
-                                text.append("Gold ").append("%,d".format(aoe.optLong("goldHAoeHipotetico"))).append("/h · ").append("%,d".format(aoe.optLong("abatesHAoeHipotetico"))).append(" abates/h\n")
-                            }
+                            text.append(title).append(if (aoe) " · COM AoE (hipótese): " else " · SEM AoE: ")
+                            if (bestValue >= 0L) {
+                                text.append(bestPokemon).append(" / ").append(bestHunt)
+                                    .append(" · ").append("%,d".format(bestValue)).append("/h\n")
+                            } else text.append("sem resultado\n")
                         }
+                        text.append("MELHOR OPÇÃO POR OBJETIVO\n")
+                        text.append("Cada Pokémon usa sua própria Hunt liberada.\n")
+                        appendBest("XP Pokémon", "pokemon", false)
+                        appendBest("XP Pokémon", "pokemon", true)
+                        appendBest("XP treinador", "trainer", false)
+                        appendBest("XP treinador", "trainer", true)
+                        appendBest("Gold", "gold", false)
+                        appendBest("Gold", "gold", true)
                     }
                     text.append("\nToque em “Ver resultado” para atualizar esta consulta.")
                     output.text = text.toString()
