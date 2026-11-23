@@ -680,9 +680,10 @@ object GameDataCapture {
   const publish = (kind, force = false) => {
     if (!state) return;
     const now = Date.now();
-    // Atualizações incrementais podem chegar muitas vezes por segundo.
-    // Amostra tudo em memória, mas persiste no Android no máximo a cada 8 s.
-    if ((kind === 'estado' || kind === 'batalha' || kind === 'field') &&
+    // Eventos podem chegar muitas vezes por segundo. O estado é atualizado em memória,
+    // mas a ponte nativa recebe no máximo um snapshot comum a cada 8 s.
+    // Snapshot inicial e resultado de uma análise solicitada são exceções.
+    if (kind !== 'welcome' && kind !== 'analysis' &&
         now - diagnostics.lastPublishAt < 8000) return;
     diagnostics.lastPublishAt = now;
     const pokemons = Array.isArray(state.pokemons)
