@@ -489,7 +489,7 @@ class MainActivity : Activity() {
         val generation = ++huntPollGeneration
         val progress = AlertDialog.Builder(this)
             .setTitle("Analisando Hunts")
-            .setMessage("Comparando seus Pokémon com as Hunts liberadas. O resultado aparecerá nesta tela.")
+            .setMessage("Confirmando a janela do jogo e preparando a análise…")
             .setNegativeButton("Fechar", null)
             .create()
         progress.show()
@@ -497,14 +497,15 @@ class MainActivity : Activity() {
         val intent = Intent(OverlayService.ACTION_RUN_HUNT_ANALYSIS)
             .setPackage(packageName)
             .putExtra("accountId", account)
+            .putExtra("requestId", requestedAt)
         sendBroadcast(intent)
         pollDashboardHuntAnalysis(account, requestedAt, 0, generation, progress)
     }
 
     private fun pollDashboardHuntAnalysis(account: Int, requestedAt: Long, attempt: Int, generation: Int, progress: AlertDialog) {
-        if (isFinishing || generation != huntPollGeneration || attempt >= 40 || account != selectedAccount) {
+        if (isFinishing || generation != huntPollGeneration || attempt >= 60 || account != selectedAccount) {
             if (progress.isShowing) progress.dismiss()
-            if (attempt >= 40 && generation == huntPollGeneration) showDialog("Hunt Analyzer", "A análise ainda não terminou. Mantenha a janela da conta aberta e tente consultar novamente.")
+            if (attempt >= 60 && generation == huntPollGeneration) showDialog("Hunt Analyzer", "A janela confirmou o pedido, mas a análise não terminou em 90 segundos. Consulte o diagnóstico desta conta.")
             return
         }
         dashboardIo.execute {
@@ -512,6 +513,23 @@ class MainActivity : Activity() {
             mainHandler.post {
                 if (isFinishing || generation != huntPollGeneration || account != selectedAccount) {
                     if (progress.isShowing) progress.dismiss()
+                    return@post
+                }
+                val receipt = snapshot?.optJSONObject("analysisRequest")
+                val receiptMatches = receipt?.optLong("requestId", -1L) == requestedAt
+                if (attempt >= 4 && !receiptMatches) {
+                    if (progress.isShowing) progress.dismiss()
+                    showDialog("Hunt Analyzer", "A janela da conta selecionada não confirmou o comando. A análise não foi iniciada. Verifique se essa janela do jogo está aberta e conectada.")
+                    return@post
+                }
+                if (receiptMatches && !receipt!!.optBoolean("accepted", false)) {
+                    if (progress.isShowing) progress.dismiss()
+                    val reason = when (receipt.optString("reason")) {
+                        "dados_indisponiveis" -> "A captura ainda não recebeu Pokémon, Hunts e catálogo suficientes. Aguarde a conexão terminar e tente novamente."
+                        "bridge_indisponivel" -> "O leitor da página ainda não está ativo. Reabra a janela desta conta e aguarde o jogo carregar."
+                        else -> "A janela recebeu o pedido, mas não conseguiu agendar a análise (" + receipt.optString("reason", "motivo não informado") + ")."
+                    }
+                    showDialog("Hunt Analyzer · não iniciado", reason)
                     return@post
                 }
                 val analysis = snapshot?.optJSONObject("huntAnalysis")
@@ -523,8 +541,14 @@ class MainActivity : Activity() {
                     dashboardScroll.post { root.findViewWithTag<View>("hunt-analysis-result")?.let { dashboardScroll.smoothScrollTo(0, it.top) } }
                 } else if (analysis?.optString("status") == "erro") {
                     if (progress.isShowing) progress.dismiss()
-                    showDialog("Hunt Analyzer", analysis.optString("message", "Não foi possível concluir a análise."))
+                    showDialog("Hunt Analyzer · erro", analysis.optString("message", "Não foi possível concluir a análise."))
+                } else if (analysis?.optString("status") == "sem_dados") {
+                    if (progress.isShowing) progress.dismiss()
+                    showDialog("Hunt Analyzer · sem dados", "A análise executou, mas não encontrou Pokémon com atributos suficientes. Confira no diagnóstico se Pokémon com stats, Hunts e catálogo foram recebidos.")
                 } else {
+                    if (receiptMatches && receipt?.optBoolean("accepted", false) == true && progress.isShowing) {
+                        progress.setMessage("Pedido confirmado pela janela. Calculando com os dados desta conta…")
+                    }
                     mainHandler.postDelayed({ pollDashboardHuntAnalysis(account, requestedAt, attempt + 1, generation, progress) }, 1500)
                 }
             }
