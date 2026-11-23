@@ -488,6 +488,7 @@ object GameDataCapture {
     const noAoeRows = rows.slice().sort((a,b) => b.xpPokemonH - a.xpPokemonH);
     const aoeRows = rows.slice().sort((a,b) => b.xpPokemonHAoeHipotetico - a.xpPokemonHAoeHipotetico);
     const goldRows = rows.slice().sort((a,b) => b.goldH - a.goldH);
+    const goldAoeRows = rows.slice().sort((a,b) => b.goldHAoeHipotetico - a.goldHAoeHipotetico);
     const hasAoe = pk.tmAoe === true || pk.tmAoe === 1 || pk.tmAoe === 'true';
     return {
       pokemonId: pk.id, nome: pk.nome || species.name || ('Pokémon ' + pk.speciesId),
@@ -496,9 +497,12 @@ object GameDataCapture {
       melhorXpSemAoe: noAoeRows[0] || null,
       melhorXpComAoe: aoeRows[0] || null,
       melhorGold: goldRows[0] || null,
+      melhorGoldComAoe: goldAoeRows[0] || null,
       topHunts: (hasAoe ? aoeRows : noAoeRows).slice(0, 5),
       topHuntsSemAoe: noAoeRows.slice(0, 5),
       topHuntsComAoe: aoeRows.slice(0, 5),
+      topGoldSemAoe: goldRows.slice(0, 5),
+      topGoldComAoe: goldAoeRows.slice(0, 5),
       huntsAnalisadas: rows.length
     };
   };
