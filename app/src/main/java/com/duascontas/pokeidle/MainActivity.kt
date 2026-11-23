@@ -128,10 +128,10 @@ class MainActivity : Activity() {
                 cornerRadius = dp(18).toFloat()
                 setStroke(dp(1), 0xFF426878.toInt())
             }
-            addView(label("✦  HUNTER", 12f, 0xFF8DE0D1.toInt(), true))
-            addView(label("Seu companion durante o jogo", 19f, TEXT, true))
-            addView(label("Consultas rápidas de Shiny, bônus de XP e Hunts. O processamento pesado só começa quando você pedir.", 12f, 0xFFD2DCE5.toInt()))
-            addView(actionButton("Abrir jogo com Hunter", true) {
+            addView(label("✦  COMPANION", 10f, 0xFF8DE0D1.toInt(), true))
+            addView(label("Inteligência durante a Hunt", 19f, TEXT, true))
+            addView(label("Consulte métricas, Hunts e oportunidades. Cálculos pesados só rodam quando você solicita.", 12f, 0xFFD2DCE5.toInt()))
+            addView(actionButton("Abrir jogo + Companion", true) {
                 startAccount(selectedAccount)
             }.apply {
                 layoutParams = LinearLayout.LayoutParams(
@@ -410,12 +410,24 @@ class MainActivity : Activity() {
                 break
             }
         }
+        val xp = snapshot?.optJSONObject("euXp")
+        val shop = xp?.optJSONObject("loja")
+        val twitch = xp?.optJSONObject("twitch")
+        val kick = xp?.optJSONObject("kick")
+        val bonusSignature = org.json.JSONObject()
+            .put("guildBonusPct", xp?.optDouble("guildBonusPct", 0.0) ?: 0.0)
+            .put("vipUntil", shop?.optLong("vipAte", 0L) ?: 0L)
+            .put("twitchActive", twitch?.optBoolean("assistindo", false) ?: false)
+            .put("twitchPct", twitch?.optDouble("pctAtual", 0.0) ?: 0.0)
+            .put("kickPct", kick?.optDouble("pct", 0.0) ?: 0.0)
+            .put("event", xp?.opt("evento")?.toString() ?: "")
         return org.json.JSONObject()
             .put("trainerLevel", player?.optInt("level", 0) ?: 0)
             .put("huntSlug", player?.optString("huntSlug", "não identificada") ?: "não identificada")
             .put("pokemonName", activeName)
             .put("pokemonLevel", activeLevel)
             .put("activeId", activeId ?: "")
+            .put("bonusSignature", bonusSignature.toString())
     }
 
     private fun startPreyExperiment(account: Int, preyEnabled: Boolean, snapshot: org.json.JSONObject?) {
@@ -463,6 +475,12 @@ class MainActivity : Activity() {
                 rates.put(key, (difference.toDouble() * 3600000.0 / duration.toDouble()).toLong())
             }
         }
+        val endingContext = preyContext(snapshot)
+        val contextStable = active.optString("huntSlug") == endingContext.optString("huntSlug") &&
+            active.optString("activeId") == endingContext.optString("activeId") &&
+            active.optInt("trainerLevel") == endingContext.optInt("trainerLevel") &&
+            active.optString("bonusSignature") == endingContext.optString("bonusSignature")
+        val validForComparison = contextStable && duration >= 300000L && rates.has("xpPokemon")
         val result = org.json.JSONObject()
             .put("condition", active.optString("condition"))
             .put("startedAt", active.optLong("startedAt"))
@@ -472,6 +490,8 @@ class MainActivity : Activity() {
             .put("trainerLevel", active.optInt("trainerLevel"))
             .put("pokemonName", active.optString("pokemonName"))
             .put("pokemonLevel", active.optInt("pokemonLevel"))
+            .put("contextStable", contextStable)
+            .put("validForComparison", validForComparison)
             .put("delta", delta)
             .put("ratesPerHour", rates)
         val history = try {
@@ -484,6 +504,9 @@ class MainActivity : Activity() {
         fun rate(key: String): String {
             return if (rates.has(key)) "%,d/h".format(rates.optLong(key)) else "sem dado"
         }
+        val validity = if (validForComparison) "Amostra válida para comparação" else
+            "Amostra registrada, mas EXCLUÍDA das médias: " +
+                if (!contextStable) "Hunt, Pokémon, nível ou bônus mudaram." else "duração menor que 5 minutos ou sem XP medido."
         val message = "Condição: Prey " + active.optString("condition") +
             "\nHunt: " + active.optString("huntSlug") +
             "\nPokémon: " + active.optString("pokemonName") + " Nv. " + active.optInt("pokemonLevel") +
@@ -494,7 +517,8 @@ class MainActivity : Activity() {
             "\nAbates: " + rate("abates") +
             "\nCapturas: " + rate("capturas") +
             "\nBolas consumidas: " + (delta.optLong("bolas", -1L).takeIf { it >= 0 }?.toString() ?: "sem dado") +
-            "\n\nResultado observado no intervalo. Uma amostra isolada não prova causalidade. Faça várias amostras ON/OFF em condições equivalentes."
+            "\n\n" + validity +
+            "\nResultado observado no intervalo. Uma amostra isolada não prova causalidade. Faça várias amostras ON/OFF em condições equivalentes."
         showDialog("Amostra Prey registrada", message)
     }
 
@@ -513,7 +537,7 @@ class MainActivity : Activity() {
             var kills = 0L
             for (i in 0 until history.length()) {
                 val item = history.optJSONObject(i) ?: continue
-                if (item.optString("condition") != condition) continue
+                if (item.optString("condition") != condition || !item.optBoolean("validForComparison", false)) continue
                 val rates = item.optJSONObject("ratesPerHour") ?: continue
                 if (!rates.has("xpPokemon")) continue
                 count++
@@ -1168,8 +1192,8 @@ class MainActivity : Activity() {
     private fun addAnalysisOption(title: String, description: String, action: () -> Unit) {
         val option = column().apply {
             setPadding(dp(13), dp(11), dp(13), dp(11))
-            background = roundedPanel(PANEL)
-            addView(label(title, 13f, ACCENT, true))
+            background = roundedPanel(PANEL_ALT, 14)
+            addView(label(title, 12f, ACCENT, true))
             addView(label(description, 12f, TEXT))
             isClickable = true
             isFocusable = true
@@ -1192,7 +1216,7 @@ class MainActivity : Activity() {
     private fun metricCard(title: String): View = column().apply {
         val display = metricDisplay(title)
         setPadding(dp(12), dp(11), dp(12), dp(11))
-        background = roundedPanel(PANEL, 14)
+        background = roundedPanel(PANEL_ALT, 14)
         addView(label(title, 9f, ACCENT, true))
         addView(label(display.first, 23f, TEXT, true))
         addView(label(display.second, 9f, MUTED))
@@ -1317,7 +1341,7 @@ class MainActivity : Activity() {
     private fun roundedPanel(color: Int, radiusDp: Int = 16) = GradientDrawable().apply {
         setColor(color)
         cornerRadius = dp(radiusDp).toFloat()
-        setStroke(dp(1), 0xFF2A3948.toInt())
+        setStroke(dp(1), 0xFF34485A.toInt())
     }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
