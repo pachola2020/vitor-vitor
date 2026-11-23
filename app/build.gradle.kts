@@ -12,8 +12,8 @@ android {
         applicationId = "com.duascontas.pokeidle.assistant.v2"
         minSdk = 28
         targetSdk = 34
-        versionCode = 25
-        versionName = "0.5.20-render-guard-test"
+        versionCode = 26
+        versionName = "0.5.21-on-demand-dashboard"
     }
 
     signingConfigs {
