@@ -485,12 +485,13 @@ object GameDataCapture {
         entry,
         enemy: analysisCatalog.get(String(entry.pokeId))
       })).filter(x => x.enemy && Number(x.entry.pontos) > 0);
-      const weightTotal = targets.reduce((sum, x) => sum + Number(x.entry.pontos), 0);
-      if (!weightTotal) continue;
+      // O jogo não publica frequência relativa das espécies da Hunt.
+      // Portanto, cada espécie recebe o mesmo peso; "pontos" não é tratado como taxa de spawn.
+      if (!targets.length) continue;
       let ttk = 0, xpPerKill = 0, goldPerKill = 0;
       for (const target of targets) {
         const enemy = target.enemy;
-        const weight = Number(target.entry.pontos) / weightTotal;
+        const weight = 1 / targets.length;
         const enemyTypes = [enemy.type1, enemy.type2].filter(Boolean);
         const enemyLevel = Math.max(1, Number(hunt.nivel) || 1);
         const enemyDef = ((Number(enemy.baseDef) || 0) + 32) * enemyLevel / 100;
@@ -522,7 +523,7 @@ object GameDataCapture {
         } catch (_) {}
       }
       if (!Number.isFinite(ttk) || ttk <= 0) continue;
-      const targetCount = Math.max(1, Math.min(16, Math.round(weightTotal)));
+      const targetCount = Math.max(1, Math.min(16, Number(analyser.MAX_MOBS) || 16));
       const travelSeconds = 20.6 * 0.26 * 0.31;
       const killsSingle = Math.min(3600 / (ttk + 1.8), targetCount * 3600 / (travelSeconds + 2.8));
       const aoePossible = pk.tmAoe === true || pk.tmAoe === 1 || pk.tmAoe === 'true';
@@ -748,14 +749,13 @@ object GameDataCapture {
       }
     };
     if (!staticSnapshotSent || kind === 'welcome') {
+      // O app nativo só precisa do índice de Hunts para exibição.
+      // Catálogo completo e espécies ficam no JavaScript do WebView, onde o Analyzer os usa.
+      // Isso evita persistir e transportar centenas de KB de dados estáticos a cada conta.
       payload.hunts = hunts.map(h => ({
         slug: h.slug, nome: h.nome, nivel: h.nivel,
-        regiao: h.regiao, area: h.area,
-        especies: Array.isArray(h.especies) ? h.especies.map(e => ({
-          pokeId: e.pokeId, pontos: e.pontos
-        })) : []
+        regiao: h.regiao, area: h.area
       }));
-      payload.catalog = catalogData;
       payload._replaceSnapshot = true;
       staticSnapshotSent = true;
     }
