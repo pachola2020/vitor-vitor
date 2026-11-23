@@ -649,7 +649,6 @@ object GameDataCapture {
     } finally {
       analysisBusy = false;
       publish('analysis', true);
-      if (getHuntAnalysisInputKey() !== lastAnalysisKey) scheduleHuntAnalysis();
     }
   };
 
