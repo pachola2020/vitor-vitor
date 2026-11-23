@@ -682,7 +682,7 @@ object GameDataCapture {
     const now = Date.now();
     // Atualizações incrementais podem chegar muitas vezes por segundo.
     // Amostra tudo em memória, mas persiste no Android no máximo a cada 8 s.
-    if (!force && (kind === 'estado' || kind === 'batalha' || kind === 'field') &&
+    if ((kind === 'estado' || kind === 'batalha' || kind === 'field') &&
         now - diagnostics.lastPublishAt < 8000) return;
     diagnostics.lastPublishAt = now;
     const pokemons = Array.isArray(state.pokemons)
