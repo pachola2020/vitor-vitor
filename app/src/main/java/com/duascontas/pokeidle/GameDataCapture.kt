@@ -439,7 +439,7 @@ object GameDataCapture {
     return read(moveType, d1) * (d2 && d2 !== d1 ? read(moveType, d2) : 1);
   };
 
-  const estimatePokemonHunts = (pk, context) => {
+  const estimatePokemonHunts = async (pk, context, shouldCancel = () => false) => {
     const { analyser, reward, cooldown } = analysisModules;
     const species = analysisCatalog.get(String(pk.speciesId ?? pk.pokeId));
     if (!species || !pk.stats) return null;
@@ -480,7 +480,13 @@ object GameDataCapture {
     try { xpTrainerMult = Number(analyser.multXpTreinador?.(state, now, catalogData?.tiposBoost || [])) || 1; } catch (_) {}
     try { lootBonus = Number(analyser.bonusLootPct?.(state, now, catalogData?.tiposBoost || [])) || 0; } catch (_) {}
     const rows = [];
+    let processedHunts = 0;
     for (const hunt of unlocked) {
+      if (++processedHunts % 8 === 0) {
+        if (shouldCancel()) return null;
+        // Devolve o controle ao WebView durante análises extensas.
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
       const targets = hunt.especies.map(entry => ({
         entry,
         enemy: analysisCatalog.get(String(entry.pokeId))
@@ -528,8 +534,8 @@ object GameDataCapture {
       const killsSingle = Math.min(3600 / (ttk + 1.8), targetCount * 3600 / (travelSeconds + 2.8));
       const aoePossible = pk.tmAoe === true || pk.tmAoe === 1 || pk.tmAoe === 'true';
       // AoE hipotético usa densidade provisória; não é medição do campo desta Hunt.
-      const aoeTargets = 2.2;
-      const killsAoe = Math.min(killsSingle * aoeTargets, 16 * 3600 / (Math.max(0.8, travelSeconds * 0.55) + 2.8));
+      const aoeTargets = 2.0;
+      const killsAoe = Math.min(killsSingle * aoeTargets, targetCount * 3600 / (Math.max(0.8, travelSeconds * 0.55) + 2.8));
       const xpP = killsSingle * xpPerKill * xpPokemonMult;
       const xpT = killsSingle * xpPerKill * xpTrainerMult;
       const gold = killsSingle * goldPerKill;
@@ -545,7 +551,7 @@ object GameDataCapture {
         abatesHAoeHipotetico: Math.round(killsAoe),
         possuiAoe: aoePossible,
         confianca: 'baixa: sem geometria de campo e ritmo medido',
-        observacaoAoe: 'cenário hipotético com 2,2 alvos por golpe; não é resultado medido'
+        observacaoAoe: 'cenário hipotético com 2 alvos por golpe; não é resultado medido'
       });
     }
     const noAoeRows = rows.slice().sort((a,b) => b.xpPokemonH - a.xpPokemonH);
@@ -624,7 +630,7 @@ object GameDataCapture {
       // Cede tempo ao WebView entre Pokémon para não monopolizar a thread do jogo.
       for (const candidate of candidates) {
         if (inputKey !== getHuntAnalysisInputKey()) break;
-        const result = estimatePokemonHunts(candidate, catalogData);
+        const result = await estimatePokemonHunts(candidate, catalogData, () => inputKey !== getHuntAnalysisInputKey());
         if (result) results.push(result);
         await new Promise(resolve => setTimeout(resolve, 16));
       }

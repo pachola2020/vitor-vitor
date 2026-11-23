@@ -16,8 +16,8 @@ android {
         applicationId = "com.duascontas.pokeidle.assistant.v2"
         minSdk = 28
         targetSdk = 34
-        versionCode = 37
-        versionName = "0.5.32-lightweight-hunt-candidate" // Compact payload; corrected Hunt distribution model
+        versionCode = 38
+        versionName = "0.5.33-cooperative-hunt-candidate" // Yield between Hunt batches; conservative AoE assumption
     }
 
     signingConfigs {
