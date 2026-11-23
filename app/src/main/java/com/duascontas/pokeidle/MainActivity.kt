@@ -157,6 +157,7 @@ class MainActivity : Activity() {
             addView(label(summary.second, 13f, TEXT))
         }
         root.addView(notice)
+        root.addView(actionButton("Atualizar dados", false) { renderDashboard() })
         root.addView(actionButton("Ver diagnóstico técnico", false) { showCaptureDiagnostics() })
         space(12)
 
@@ -290,7 +291,7 @@ class MainActivity : Activity() {
     }
 
     private fun showCaptureDiagnostics() {
-        val data = CaptureStore.read(this, selectedAccount)
+        val data = dashboardData
         if (data == null) {
             showDialog("Diagnóstico técnico", "Ainda não há dados desta conta. Abra o jogo e tente novamente.")
             return
@@ -334,7 +335,7 @@ class MainActivity : Activity() {
     }
 
     private fun showProgressionDetails() {
-        val data = CaptureStore.read(this, selectedAccount)
+        val data = dashboardData
         val session = data?.optJSONObject("gameSession")
         val m = data?.optJSONObject("measurements")
         val player = data?.optJSONObject("player")
@@ -354,7 +355,7 @@ class MainActivity : Activity() {
     }
 
     private fun showHuntDetails() {
-        val data = CaptureStore.read(this, selectedAccount)
+        val data = dashboardData
         val hunts = data?.optJSONArray("hunts")
         val level = data?.optJSONObject("player")?.optInt("level", 0) ?: 0
         if (hunts == null || hunts.length() == 0) {
@@ -398,7 +399,7 @@ class MainActivity : Activity() {
     }
 
     private fun showHuntAnalyzerDetails() {
-        val data = CaptureStore.read(this, selectedAccount)
+        val data = dashboardData
         val analysis = data?.optJSONObject("huntAnalysis")
         if (analysis == null) {
             showDialog("Hunt Analyzer", "Ainda não há resultado. Abra a conta e aguarde o catálogo oficial ser carregado.")
@@ -459,7 +460,7 @@ class MainActivity : Activity() {
     }
 
     private fun showPokemonDetails() {
-        val data = CaptureStore.read(this, selectedAccount)
+        val data = dashboardData
         val player = data?.optJSONObject("player")
         val pokemons = player?.optJSONArray("pokemons")
         if (pokemons == null || pokemons.length() == 0) {
@@ -485,7 +486,7 @@ class MainActivity : Activity() {
     }
 
     private fun showShinyDetails() {
-        val data = CaptureStore.read(this, selectedAccount)
+        val data = dashboardData
         val session = data?.optJSONObject("gameSession")
         val balls = sumJsonObject(session?.optJSONObject("bolas"))
         val seen = nullableLong(session, "shiniesVistos")
@@ -511,7 +512,7 @@ class MainActivity : Activity() {
     }
 
     private fun showMarketDetails() {
-        val data = CaptureStore.read(this, selectedAccount)
+        val data = dashboardData
         val market = data?.optJSONObject("market")
         val linesArray = market?.optJSONArray("linhas")
         if (market == null || linesArray == null || linesArray.length() == 0) {
