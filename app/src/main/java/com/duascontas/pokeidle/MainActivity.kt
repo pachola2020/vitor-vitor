@@ -441,7 +441,7 @@ class MainActivity : Activity() {
             appendLine("XP treinador: ${rateText(sessionRate(session, "xpTreinador") ?: nullableLong(measured, "xpTrainerH"))}")
             appendLine("Gold: ${rateText(sessionRate(session, "gold"))} · Abates: ${rateText(sessionRate(session, "abates") ?: nullableLong(measured, "killsH"))}")
             appendLine("HP positivo: ${nullableLong(measured, "survivalPct")?.let { "$it% das amostras" } ?: "sem amostras"} · Sessão: ${sessionMinutes} min")
-            appendLine("Coins líquidos observados: ${nullableLong(measured, "coinsNetH")?.let { "%,d/h".format(it) } ?: "aguardando medição"}")
+            appendLine("Variação do saldo Coins: ${nullableLong(measured, "coinsNetH")?.let { "%,d/h".format(it) } ?: "aguardando medição"}")
             appendLine("Estes indicadores são da sessão/conta; não representam uma previsão individual de cada Hunt.")
             appendLine()
             appendLine("ESTIMATIVA TEÓRICA · HUNTS LIBERADAS")
