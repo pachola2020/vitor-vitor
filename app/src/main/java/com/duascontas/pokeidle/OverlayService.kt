@@ -251,6 +251,8 @@ open class OverlayService : Service() {
             }
         }
         wv.webChromeClient = WebChromeClient()
+        // Instala a captura antes da navegação para não perder o primeiro welcome do WebSocket.
+        if (!isTool && accountId in 1..3) GameDataCapture.install(this, wv, accountId)
         wv.loadUrl(startUrl)
         return wv
     }
