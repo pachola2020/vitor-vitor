@@ -1,6 +1,7 @@
 package com.duascontas.pokeidle
 
 import android.app.Activity
+import android.annotation.SuppressLint
 import android.app.DownloadManager
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -111,6 +112,7 @@ object AppUpdater {
         return false
     }
 
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     fun downloadAndInstall(activity: Activity, update: UpdateInfo) {
         val parsedUrl = runCatching { Uri.parse(update.downloadUrl) }.getOrNull()
         if (parsedUrl == null || parsedUrl.scheme != "https" || parsedUrl.host != "github.com" ||
