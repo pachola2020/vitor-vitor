@@ -211,6 +211,7 @@ class MainActivity : Activity() {
         addAnalysisOption("COMPARAR CONTAS", "Compare progressão e farm observado entre Principal, Alt 1 e Alt 2", ::showAccountComparison)
         addAnalysisOption("HUNTS", "Hunts liberadas, níveis e Hunt atual da conta", ::showHuntDetails)
         addAnalysisOption("HUNT ANALYZER", "Compare a melhor Hunt de cada Pokémon, com e sem AoE", ::openHuntAnalyzer)
+        addAnalysisOption("PREY ANALYZER · EXPERIMENTAL", "Registre períodos Prey ON/OFF e compare XP, Gold, abates e capturas medidos", ::showPreyAnalyzer)
         root.addView(actionButton("Calcular Hunt Analyzer agora", true) { requestHuntAnalysis() })
         if (dashboardData?.optJSONObject("huntAnalysis")?.optString("status") == "estimativa_disponivel") addHuntAnalysisInline()
         addAnalysisOption("POKÉMON", "Equipe, Pokémon ativo, nível, IVs e atributos recebidos", ::showPokemonDetails)
@@ -329,6 +330,208 @@ class MainActivity : Activity() {
         } else {
             "CAPTURA ATIVA · AGUARDANDO JOGO" to "O leitor passivo está instalado e aguarda a conexão do jogo. $freshness."
         }
+    }
+
+    private fun showPreyAnalyzer() {
+        val account = selectedAccount
+        dashboardIo.execute {
+            val snapshot = CaptureStore.read(this, account)
+            mainHandler.post {
+                if (isFinishing || selectedAccount != account) return@post
+                dashboardData = snapshot
+                renderDashboard(loadSnapshot = false)
+                val prefs = getSharedPreferences("prey_experiments", MODE_PRIVATE)
+                val active = prefs.getString("active_" + account, null)?.let {
+                    try { org.json.JSONObject(it) } catch (_: Exception) { null }
+                }
+                if (active != null) {
+                    val message = "Condição marcada: " + active.optString("condition") +
+                        "\nHunt: " + active.optString("huntSlug", "não identificada") +
+                        "\nPokémon: " + active.optString("pokemonName", "não identificado") +
+                        "\n\nFinalize após um período representativo. Evite trocar Hunt, Pokémon ou bônus durante a amostra."
+                    AlertDialog.Builder(this)
+                        .setTitle("Prey · teste em andamento")
+                        .setMessage(message)
+                        .setPositiveButton("Finalizar amostra") { _, _ -> finishPreyExperiment(account, snapshot) }
+                        .setNegativeButton("Manter teste", null)
+                        .setNeutralButton("Cancelar teste") { _, _ ->
+                            prefs.edit().remove("active_" + account).apply()
+                            showDialog("Prey", "A amostra foi cancelada e não entrou nas comparações.")
+                        }
+                        .show()
+                } else {
+                    if (snapshot?.optJSONObject("gameSession") == null) {
+                        showDialog("Prey Analyzer", "Ainda não há contadores de sessão nesta conta. Abra o jogo, aguarde a captura e tente novamente.")
+                        return@post
+                    }
+                    val telemetry = snapshot.optJSONObject("preyTelemetry")
+                    val detected = telemetry?.optJSONObject("eventCounts")?.length() ?: 0
+                    val note = if (detected > 0) "Sinais de evento com termos relacionados detectados: " + detected +
+                        ". Isso é telemetria exploratória, não confirmação da mecânica." else
+                        "Nenhum evento com nome/campo explícito de Prey foi identificado até agora."
+                    val message = "Não encontrei documentação pública oficial que descreva uma mecânica chamada Prey com fórmula verificável. Por isso, o módulo começa como experimento A/B: você marca ON ou OFF no jogo e o app mede os contadores reais entre as duas marcações.\n\n" +
+                        note + "\n\n" + preyHistorySummary(account) +
+                        "\n\nMantenha a mesma Hunt, Pokémon, nível e bônus durante cada amostra."
+                    AlertDialog.Builder(this)
+                        .setTitle("Prey · laboratório experimental")
+                        .setMessage(message)
+                        .setItems(arrayOf("Iniciar amostra · Prey ATIVADA", "Iniciar amostra · Prey DESATIVADA")) { _, which ->
+                            startPreyExperiment(account, which == 0, snapshot)
+                        }
+                        .setNegativeButton("Fechar", null)
+                        .show()
+                }
+            }
+        }
+    }
+
+    private fun preyCounters(snapshot: org.json.JSONObject?): org.json.JSONObject {
+        val session = snapshot?.optJSONObject("gameSession") ?: return org.json.JSONObject()
+        val result = org.json.JSONObject()
+        for (key in arrayOf("ms", "xpPokemon", "xpTreinador", "gold", "abates", "capturas", "shiniesVistos", "shinies")) {
+            if (session.has(key) && !session.isNull(key)) result.put(key, session.optLong(key))
+        }
+        val balls = sumJsonObject(session.optJSONObject("bolas"))
+        if (balls != null) result.put("bolas", balls)
+        return result
+    }
+
+    private fun preyContext(snapshot: org.json.JSONObject?): org.json.JSONObject {
+        val player = snapshot?.optJSONObject("player")
+        val pokemons = player?.optJSONArray("pokemons")
+        val activeId = player?.opt("activeId")?.toString()
+        var activeName = "não identificado"
+        var activeLevel = 0
+        if (pokemons != null) for (i in 0 until pokemons.length()) {
+            val pokemon = pokemons.optJSONObject(i) ?: continue
+            if (pokemon.opt("id")?.toString() == activeId) {
+                activeName = pokemon.optString("nome", activeName)
+                activeLevel = pokemon.optInt("level", 0)
+                break
+            }
+        }
+        return org.json.JSONObject()
+            .put("trainerLevel", player?.optInt("level", 0) ?: 0)
+            .put("huntSlug", player?.optString("huntSlug", "não identificada") ?: "não identificada")
+            .put("pokemonName", activeName)
+            .put("pokemonLevel", activeLevel)
+            .put("activeId", activeId ?: "")
+    }
+
+    private fun startPreyExperiment(account: Int, preyEnabled: Boolean, snapshot: org.json.JSONObject?) {
+        val counters = preyCounters(snapshot)
+        if (counters.length() == 0) {
+            showDialog("Prey", "Sem contadores de sessão suficientes para iniciar uma amostra.")
+            return
+        }
+        val active = preyContext(snapshot)
+            .put("accountId", account)
+            .put("condition", if (preyEnabled) "ON" else "OFF")
+            .put("startedAt", System.currentTimeMillis())
+            .put("baseline", counters)
+        getSharedPreferences("prey_experiments", MODE_PRIVATE)
+            .edit().putString("active_" + account, active.toString()).apply()
+        val message = "Condição registrada: Prey " + if (preyEnabled) "ATIVADA" else "DESATIVADA"
+        showDialog("Amostra iniciada", message + "\nHunt: " + active.optString("huntSlug") +
+            "\nPokémon: " + active.optString("pokemonName") + " Nv. " + active.optInt("pokemonLevel") +
+            "\n\nAgora ajuste a mecânica no próprio jogo. Ao finalizar, o app calcula as diferenças dos contadores reais da sessão.")
+    }
+
+    private fun finishPreyExperiment(account: Int, snapshot: org.json.JSONObject?) {
+        val prefs = getSharedPreferences("prey_experiments", MODE_PRIVATE)
+        val active = prefs.getString("active_" + account, null)?.let {
+            try { org.json.JSONObject(it) } catch (_: Exception) { null }
+        }
+        if (active == null) {
+            showDialog("Prey", "Não há amostra ativa para finalizar.")
+            return
+        }
+        val baseline = active.optJSONObject("baseline") ?: org.json.JSONObject()
+        val ending = preyCounters(snapshot)
+        if (ending.length() == 0) {
+            showDialog("Prey", "Não consegui ler os contadores finais. Atualize os dados da conta e tente finalizar novamente.")
+            return
+        }
+        val duration = (System.currentTimeMillis() - active.optLong("startedAt", System.currentTimeMillis())).coerceAtLeast(1L)
+        val rates = org.json.JSONObject()
+        val delta = org.json.JSONObject()
+        for (key in arrayOf("xpPokemon", "xpTreinador", "gold", "abates", "capturas", "shiniesVistos", "shinies", "bolas")) {
+            if (!baseline.has(key) || !ending.has(key)) continue
+            val difference = ending.optLong(key) - baseline.optLong(key)
+            if (difference >= 0L) {
+                delta.put(key, difference)
+                rates.put(key, (difference.toDouble() * 3600000.0 / duration.toDouble()).toLong())
+            }
+        }
+        val result = org.json.JSONObject()
+            .put("condition", active.optString("condition"))
+            .put("startedAt", active.optLong("startedAt"))
+            .put("endedAt", System.currentTimeMillis())
+            .put("durationMs", duration)
+            .put("huntSlug", active.optString("huntSlug"))
+            .put("trainerLevel", active.optInt("trainerLevel"))
+            .put("pokemonName", active.optString("pokemonName"))
+            .put("pokemonLevel", active.optInt("pokemonLevel"))
+            .put("delta", delta)
+            .put("ratesPerHour", rates)
+        val history = try {
+            org.json.JSONArray(prefs.getString("history_" + account, "[]") ?: "[]")
+        } catch (_: Exception) { org.json.JSONArray() }
+        history.put(result)
+        while (history.length() > 40) history.remove(0)
+        prefs.edit().remove("active_" + account)
+            .putString("history_" + account, history.toString()).apply()
+        fun rate(key: String): String {
+            return if (rates.has(key)) "%,d/h".format(rates.optLong(key)) else "sem dado"
+        }
+        val message = "Condição: Prey " + active.optString("condition") +
+            "\nHunt: " + active.optString("huntSlug") +
+            "\nPokémon: " + active.optString("pokemonName") + " Nv. " + active.optInt("pokemonLevel") +
+            "\nDuração: " + (duration / 60000L) + " min" +
+            "\n\nXP Pokémon: " + rate("xpPokemon") +
+            "\nXP treinador: " + rate("xpTreinador") +
+            "\nGold: " + rate("gold") +
+            "\nAbates: " + rate("abates") +
+            "\nCapturas: " + rate("capturas") +
+            "\nBolas consumidas: " + (delta.optLong("bolas", -1L).takeIf { it >= 0 }?.toString() ?: "sem dado") +
+            "\n\nResultado observado no intervalo. Uma amostra isolada não prova causalidade. Faça várias amostras ON/OFF em condições equivalentes."
+        showDialog("Amostra Prey registrada", message)
+    }
+
+    private fun preyHistorySummary(account: Int): String {
+        val history = try {
+            org.json.JSONArray(getSharedPreferences("prey_experiments", MODE_PRIVATE)
+                .getString("history_" + account, "[]") ?: "[]")
+        } catch (_: Exception) { org.json.JSONArray() }
+        if (history.length() == 0) return "Ainda não há amostras registradas."
+        val out = StringBuilder("MÉDIAS EXPLORATÓRIAS · " + history.length() + " amostras\n")
+        for (condition in arrayOf("ON", "OFF")) {
+            var count = 0
+            var xpPokemon = 0L
+            var xpTrainer = 0L
+            var gold = 0L
+            var kills = 0L
+            for (i in 0 until history.length()) {
+                val item = history.optJSONObject(i) ?: continue
+                if (item.optString("condition") != condition) continue
+                val rates = item.optJSONObject("ratesPerHour") ?: continue
+                if (!rates.has("xpPokemon")) continue
+                count++
+                xpPokemon += rates.optLong("xpPokemon")
+                xpTrainer += rates.optLong("xpTreinador")
+                gold += rates.optLong("gold")
+                kills += rates.optLong("abates")
+            }
+            if (count > 0) {
+                out.append("Prey ").append(condition).append(" · ").append(count).append(" amostras · XP Pokémon ")
+                    .append("%,d".format(xpPokemon / count)).append("/h · XP treinador ")
+                    .append("%,d".format(xpTrainer / count)).append("/h · Gold ")
+                    .append("%,d".format(gold / count)).append("/h · abates ")
+                    .append("%,d".format(kills / count)).append("/h\n")
+            } else out.append("Prey ").append(condition).append(" · aguardando amostras\n")
+        }
+        out.append("Compare apenas amostras com Hunt, Pokémon, nível e bônus semelhantes.")
+        return out.toString()
     }
 
     private fun showCaptureDiagnostics() {
