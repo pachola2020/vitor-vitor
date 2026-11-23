@@ -84,6 +84,36 @@ object GameDataCapture {
   let marketData = null;
   let fieldData = null;
   let catalogData = null;
+  // Consumo de bolas observado pela redução do inventário durante uma hunt normal.
+  // É um proxy de lançamentos; não é apresentado como evento individual confirmado.
+  let previousBallCounts = null;
+  let ballUseTimes = [];
+  let shinyCaptureTimes = [];
+  const readBallCounts = () => {
+    const out = {};
+    const balls = state?.balls;
+    if (balls && typeof balls === 'object' && !Array.isArray(balls)) {
+      for (const [id, qty] of Object.entries(balls)) {
+        const n = Number(qty);
+        if (Number.isFinite(n) && n >= 0) out[id] = n;
+      }
+    }
+    return out;
+  };
+  const trackBallUse = () => {
+    const current = readBallCounts();
+    const now = Date.now();
+    if (previousBallCounts && state?.huntSlug && !state?.noCentro &&
+        !state?.outlandTier && !/outland/i.test(String(state.huntSlug))) {
+      for (const [id, before] of Object.entries(previousBallCounts)) {
+        const spent = Math.max(0, before - (current[id] ?? 0));
+        for (let i = 0; i < Math.min(spent, 100); i++) ballUseTimes.push(now);
+      }
+    }
+    previousBallCounts = current;
+    ballUseTimes = ballUseTimes.filter(t => now - t <= 15 * 60 * 1000);
+    shinyCaptureTimes = shinyCaptureTimes.filter(t => now - t <= 24 * 60 * 60 * 1000);
+  };
   const diagnostics = {
     socketSeen: 0, textFrames: 0, jsonFrames: 0, binaryFrames: 0,
     welcome: 0, estado: 0, batalha: 0, market: 0, field: 0,
@@ -203,7 +233,14 @@ object GameDataCapture {
     const hpSamples = samples.filter(s => s.hp != null && s.maxHp > 0);
     const survivalPct = hpSamples.length
       ? Math.round(100 * hpSamples.filter(s => s.hp > 0).length / hpSamples.length) : null;
-    return { xpPokemonH, xpTrainerH, killsH, survivalPct, coinsNetH, sampleMinutes: minutes, killSamples: kills.length };
+    const ballSpan = ballUseTimes.length >= 2 ? ballUseTimes[ballUseTimes.length - 1] - ballUseTimes[0] : 0;
+    const ballThrowsH = ballUseTimes.length >= 5 && ballSpan >= 120000
+      ? Math.round((ballUseTimes.length - 1) * 3600000 / ballSpan) : null;
+    return { xpPokemonH, xpTrainerH, killsH, survivalPct, coinsNetH,
+      ballThrowsObserved: ballUseTimes.length, ballThrowsH,
+      shinyCapturesObserved: shinyCaptureTimes.length,
+      ballUseWindowMinutes: ballUseTimes.length ? Math.round((Date.now() - ballUseTimes[0]) / 60000) : 0,
+      sampleMinutes: minutes, killSamples: kills.length };
   };
   const publish = (kind, force = false) => {
     if (!state) return;
@@ -380,10 +417,12 @@ object GameDataCapture {
                   : []
               };
               merge(msg.estado && typeof msg.estado === 'object' && !Array.isArray(msg.estado) ? msg.estado : {});
+              previousBallCounts = readBallCounts();
               publish('welcome', true);
             } else if (msg.t === 'estado' && state) {
               diagnostics.estado++;
               merge(msg.estado && typeof msg.estado === 'object' && !Array.isArray(msg.estado) ? msg.estado : null);
+              trackBallUse();
               const list = Array.isArray(state.pokemons) ? state.pokemons : [];
               const active = list.find(p => String(p.id) === String(state.activeId));
               if (active) {
@@ -406,6 +445,7 @@ object GameDataCapture {
                   }
                 }
                 if (ev && ev.k === 'morte' && ev.quem === 'selvagem') kills.push(Date.now());
+                if (ev && ev.k === 'capturado' && ev.pokemon && ev.pokemon.shiny) shinyCaptureTimes.push(Date.now());
               }
               publish('batalha');
             } else if (msg.t === 'market') {
