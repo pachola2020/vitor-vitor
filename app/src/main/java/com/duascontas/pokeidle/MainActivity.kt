@@ -208,6 +208,7 @@ class MainActivity : Activity() {
 
         sectionTitle("ANÁLISES")
         addAnalysisOption("PROGRESSÃO", "XP, Gold, abates, sobrevivência e variação do saldo", ::showProgressionDetails)
+        addAnalysisOption("COMPARAR CONTAS", "Compare progressão e farm observado entre Principal, Alt 1 e Alt 2", ::showAccountComparison)
         addAnalysisOption("HUNTS", "Hunts liberadas, níveis e Hunt atual da conta", ::showHuntDetails)
         addAnalysisOption("HUNT ANALYZER", "Compare a melhor Hunt de cada Pokémon, com e sem AoE", ::openHuntAnalyzer)
         root.addView(actionButton("Calcular Hunt Analyzer agora", true) { requestHuntAnalysis() })
@@ -372,6 +373,56 @@ class MainActivity : Activity() {
             .setMessage(message)
             .setPositiveButton("Fechar", null)
             .show()
+    }
+
+    private fun showAccountComparison() {
+        Toast.makeText(this, "Lendo métricas das três contas…", Toast.LENGTH_SHORT).show()
+        dashboardIo.execute {
+            val snapshots = (1..3).map { id -> id to CaptureStore.read(this, id) }
+            mainHandler.post {
+                if (isFinishing) return@post
+                val lines = buildString {
+                    for ((id, data) in snapshots) {
+                        appendLine("━━ " + accountNames[id - 1].uppercase() + " · " + accountRoles[id - 1])
+                        if (data == null) {
+                            appendLine("Sem dados capturados nesta conta.")
+                            appendLine()
+                            continue
+                        }
+                        val player = data.optJSONObject("player")
+                        val session = data.optJSONObject("gameSession")
+                        val measured = data.optJSONObject("measurements")
+                        val pokemons = player?.optJSONArray("pokemons")
+                        val activeId = player?.opt("activeId")?.toString()
+                        var activeName = "não identificado"
+                        if (pokemons != null) for (i in 0 until pokemons.length()) {
+                            val p = pokemons.optJSONObject(i) ?: continue
+                            if (p.opt("id")?.toString() == activeId) {
+                                activeName = p.optString("nome", activeName)
+                                break
+                            }
+                        }
+                        fun rate(sessionKey: String, measuredKey: String): String {
+                            val value = sessionRate(session, sessionKey) ?: nullableLong(measured, measuredKey)
+                            return value?.let { "%,d/h".format(it) } ?: "—"
+                        }
+                        appendLine("Treinador Nv. " + (player?.optInt("level", 0) ?: 0) +
+                            " · Pokémon: " + activeName)
+                        appendLine("Hunt: " + (player?.optString("huntSlug")?.takeIf { it.isNotBlank() } ?: "—"))
+                        appendLine("XP Pokémon: " + rate("xpPokemon", "xpPokemonH") +
+                            " · XP treinador: " + rate("xpTreinador", "xpTrainerH"))
+                        appendLine("Gold: " + rate("gold", "goldH") +
+                            " · Abates: " + rate("abates", "killsH"))
+                        appendLine("HP positivo: " + (nullableLong(measured, "survivalPct")?.let { "$it%" } ?: "—") +
+                            " · Δ Coins: " + (nullableLong(measured, "coinsNetH")?.let { "%+,d/h".format(it) } ?: "—"))
+                        appendLine("Sessão: " + (nullableLong(session, "ms")?.let { (it / 60000L).toString() + " min" } ?: "—"))
+                        appendLine()
+                    }
+                    append("Comparação descritiva: níveis, Hunts, bônus, Pokémon, AoE e duração podem ser diferentes. Use os números como contexto; para comparar candidatos de farm, consulte o Hunt Analyzer de cada conta e confirme em sessão real.")
+                }
+                showDialog("Comparar contas · Principal e Alts", lines)
+            }
+        }
     }
 
     private fun showProgressionDetails() {
