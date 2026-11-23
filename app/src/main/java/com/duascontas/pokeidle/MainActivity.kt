@@ -340,6 +340,11 @@ class MainActivity : Activity() {
                 if (isFinishing || selectedAccount != account) return@post
                 dashboardData = snapshot
                 renderDashboard(loadSnapshot = false)
+                val ageMs = System.currentTimeMillis() - (snapshot?.optLong("updatedAt", 0L) ?: 0L)
+                if (snapshot == null || ageMs !in 0..60000L) {
+                    showDialog("Prey Analyzer", "Os dados desta conta estão ausentes ou desatualizados. Mantenha o jogo aberto, toque em Atualizar dados e tente novamente.")
+                    return@post
+                }
                 val prefs = getSharedPreferences("prey_experiments", MODE_PRIVATE)
                 val active = prefs.getString("active_" + account, null)?.let {
                     try { org.json.JSONObject(it) } catch (_: Exception) { null }
@@ -436,7 +441,13 @@ class MainActivity : Activity() {
             showDialog("Prey", "Sem contadores de sessão suficientes para iniciar uma amostra.")
             return
         }
-        val active = preyContext(snapshot)
+        val context = preyContext(snapshot)
+        if (context.optString("huntSlug").isBlank() || context.optString("huntSlug") == "não identificada" ||
+            context.optString("activeId").isBlank()) {
+            showDialog("Prey", "Inicie a amostra somente quando houver uma Hunt e um Pokémon ativo identificados.")
+            return
+        }
+        val active = context
             .put("accountId", account)
             .put("condition", if (preyEnabled) "ON" else "OFF")
             .put("startedAt", System.currentTimeMillis())
@@ -446,7 +457,7 @@ class MainActivity : Activity() {
         val message = "Condição registrada: Prey " + if (preyEnabled) "ATIVADA" else "DESATIVADA"
         showDialog("Amostra iniciada", message + "\nHunt: " + active.optString("huntSlug") +
             "\nPokémon: " + active.optString("pokemonName") + " Nv. " + active.optInt("pokemonLevel") +
-            "\n\nAgora ajuste a mecânica no próprio jogo. Ao finalizar, o app calcula as diferenças dos contadores reais da sessão.")
+            "\n\nConfirme que essa condição já está ativa no jogo. Mantenha a mesma Hunt, Pokémon e bônus por pelo menos 5 minutos. Ao finalizar, o app calcula as diferenças dos contadores reais da sessão.")
     }
 
     private fun finishPreyExperiment(account: Int, snapshot: org.json.JSONObject?) {
@@ -479,6 +490,7 @@ class MainActivity : Activity() {
         val contextStable = active.optString("huntSlug") == endingContext.optString("huntSlug") &&
             active.optString("activeId") == endingContext.optString("activeId") &&
             active.optInt("trainerLevel") == endingContext.optInt("trainerLevel") &&
+            active.optInt("pokemonLevel") == endingContext.optInt("pokemonLevel") &&
             active.optString("bonusSignature") == endingContext.optString("bonusSignature")
         val validForComparison = contextStable && duration >= 300000L && rates.has("xpPokemon")
         val result = org.json.JSONObject()
