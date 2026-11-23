@@ -684,21 +684,21 @@ open class OverlayService : Service() {
                     "overview" -> {
                         val analysis = data.optJSONObject("huntAnalysis")
                         val analysisStatus = analysis?.optString("status") ?: "ainda não executada"
-                        "CONTA $accountId · TREINADOR NV. ${player?.optInt("level", 0) ?: 0}\\nHunt atual: ${player?.optString("huntSlug", "não identificada")}\\nHunter trabalha somente quando você toca em uma consulta.\\nHunt Analyzer: $analysisStatus"
+                        "CONTA $accountId · TREINADOR NV. ${player?.optInt("level", 0) ?: 0}\nHunt atual: ${player?.optString("huntSlug", "não identificada")}\nHunter trabalha somente quando você toca em uma consulta.\nHunt Analyzer: $analysisStatus"
                     }
                     "opportunities" -> {
                         val event = xp?.opt("evento")
                         val hunts = data.optJSONArray("hunts")?.length() ?: 0
-                        "OPORTUNIDADES\\nTreinador Nv. ${player?.optInt("level", 0) ?: 0}\\nHunts recebidas: $hunts\\nEvento informado pelo jogo: ${event?.toString() ?: "nenhum dado disponível"}\\nA detecção de encontros raros ao vivo ainda precisa de uma fonte de evento validada."
+                        "OPORTUNIDADES\nTreinador Nv. ${player?.optInt("level", 0) ?: 0}\nHunts recebidas: $hunts\nEvento informado pelo jogo: ${event?.toString() ?: "nenhum dado disponível"}\nA detecção de encontros raros ao vivo ainda precisa de uma fonte de evento validada."
                     }
                     "xp" -> {
                         val loja = xp?.optJSONObject("loja")
                         val guild = xp?.optJSONObject("guild")
-                        "BÔNUS DE XP\\nBônus de guilda: ${xp?.optDouble("guildBonusPct", 0.0) ?: 0.0}%\\nVIP/loja: ${loja?.toString() ?: "sem dados"}\\nGuilda: ${guild?.toString() ?: "sem dados"}\\nTwitch: ${xp?.optJSONObject("twitch")?.toString() ?: "sem dados"}\\nKick: ${xp?.optJSONObject("kick")?.toString() ?: "sem dados"}"
+                        "BÔNUS DE XP\nBônus de guilda: ${xp?.optDouble("guildBonusPct", 0.0) ?: 0.0}%\nVIP/loja: ${loja?.toString() ?: "sem dados"}\nGuilda: ${guild?.toString() ?: "sem dados"}\nTwitch: ${xp?.optJSONObject("twitch")?.toString() ?: "sem dados"}\nKick: ${xp?.optJSONObject("kick")?.toString() ?: "sem dados"}"
                     }
                     "shiny" -> {
                         val shinyCount = session?.optInt("shinies", -1) ?: -1
-                        "SHINY\\nShinies registrados na sessão: ${if (shinyCount >= 0) shinyCount else "sem contador disponível"}\\nO leitor registra eventos de captura shiny observados; encontros raros não confirmados não serão inventados."
+                        "SHINY\nShinies registrados na sessão: ${if (shinyCount >= 0) shinyCount else "sem contador disponível"}\nO leitor registra eventos de captura shiny observados; encontros raros não confirmados não serão inventados."
                     }
                     "hunt_result" -> {
                         val analysis = data.optJSONObject("huntAnalysis")
@@ -707,16 +707,16 @@ open class OverlayService : Service() {
                         } else {
                             val pokemon = analysis.optJSONArray("pokemon")
                             buildString {
-                                append("HUNT ANALYZER · ${analysis.optString("status", "sem status")}\\n")
-                                append("Pokémon analisados: ${analysis.optInt("pokemonAnalisados", 0)}\\n")
+                                append("HUNT ANALYZER · ${analysis.optString("status", "sem status")}\n")
+                                append("Pokémon analisados: ${analysis.optInt("pokemonAnalisados", 0)}\n")
                                 if (pokemon != null) {
                                     for (i in 0 until minOf(2, pokemon.length())) {
                                         val p = pokemon.optJSONObject(i) ?: continue
-                                        append("${p.optString("nome", "Pokémon")} Nv.${p.optInt("level", 0)}\\n")
+                                        append("${p.optString("nome", "Pokémon")} Nv.${p.optInt("level", 0)}\n")
                                         val noAoe = p.optJSONObject("melhorXpSemAoe")
                                         val aoe = p.optJSONObject("melhorXpComAoe")
-                                        if (noAoe != null) append("Sem AoE: ${noAoe.optString("nome")} · XP/h ${noAoe.optLong("xpPokemonH")}\\n")
-                                        if (aoe != null) append("Com AoE: ${aoe.optString("nome")} · XP/h ${aoe.optLong("xpPokemonHAoeHipotetico")}\\n")
+                                        if (noAoe != null) append("Sem AoE: ${noAoe.optString("nome")} · XP/h ${noAoe.optLong("xpPokemonH")}\n")
+                                        if (aoe != null) append("Com AoE: ${aoe.optString("nome")} · XP/h ${aoe.optLong("xpPokemonHAoeHipotetico")}\n")
                                     }
                                 }
                                 append("A estimativa completa está na tela Hunt Analyzer do app.")
