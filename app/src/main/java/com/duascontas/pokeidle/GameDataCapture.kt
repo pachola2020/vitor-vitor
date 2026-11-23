@@ -133,13 +133,30 @@ object GameDataCapture {
       const elapsed = last.t - first.t;
       minutes = Math.round(elapsed / 60000);
       if (elapsed >= 120000) {
-        let p = 0, tr = 0;
+        let trainerXp = 0;
         for (let i = 1; i < samples.length; i++) {
-          p += Math.max(0, samples[i].px - samples[i - 1].px);
-          tr += Math.max(0, samples[i].tx - samples[i - 1].tx);
+          trainerXp += Math.max(0, samples[i].tx - samples[i - 1].tx);
         }
-        xpPokemonH = Math.round(p * 3600000 / elapsed);
-        xpTrainerH = Math.round(tr * 3600000 / elapsed);
+        xpTrainerH = Math.round(trainerXp * 3600000 / elapsed);
+
+        // XP do Pokémon só é comparado dentro da sequência contínua do mesmo ativo.
+        // Trocar o Pokémon não pode produzir XP/h artificialmente alto ou negativo.
+        const activeSamples = [];
+        const activeId = String(last.pid ?? '');
+        for (let i = samples.length - 1; i >= 0; i--) {
+          if (String(samples[i].pid ?? '') !== activeId) break;
+          activeSamples.unshift(samples[i]);
+        }
+        if (activeSamples.length >= 2) {
+          const pokemonElapsed = activeSamples[activeSamples.length - 1].t - activeSamples[0].t;
+          if (pokemonElapsed >= 120000) {
+            let pokemonXp = 0;
+            for (let i = 1; i < activeSamples.length; i++) {
+              pokemonXp += Math.max(0, activeSamples[i].px - activeSamples[i - 1].px);
+            }
+            xpPokemonH = Math.round(pokemonXp * 3600000 / pokemonElapsed);
+          }
+        }
       }
     }
     const killSpan = kills.length >= 2 ? kills[kills.length - 1] - kills[0] : 0;
@@ -342,7 +359,7 @@ object GameDataCapture {
               const active = list.find(p => String(p.id) === String(state.activeId));
               if (active) {
                 samples.push({
-                  t: Date.now(), px: Number(active.xp) || 0,
+                  t: Date.now(), pid: active.id, px: Number(active.xp) || 0,
                   tx: Number(state.xp) || 0,
                   hp: Number.isFinite(Number(active.hp)) ? Number(active.hp) : null,
                   maxHp: Number(active.maxHp) || 0,
