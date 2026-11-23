@@ -219,7 +219,13 @@ class MainActivity : Activity() {
         val welcomeCount = diag?.optInt("welcome", 0) ?: 0
         val estadoCount = diag?.optInt("estado", 0) ?: 0
         val lastType = diag?.optString("lastType")?.takeIf { !it.isNullOrBlank() } ?: "nenhum"
-        val diagnosticText = " · Protocolo: $frames mensagens JSON, welcome $welcomeCount, estado $estadoCount, última: $lastType"
+        val huntsWithSpecies = diag?.optInt("huntsWithSpecies", 0) ?: 0
+        val speciesEntries = diag?.optInt("huntSpeciesEntries", 0) ?: 0
+        val statsCount = diag?.optInt("pokemonWithStats", 0) ?: 0
+        val speciesIdCount = diag?.optInt("pokemonWithSpeciesId", 0) ?: 0
+        val typeEntries = diag?.optInt("typeChartEntries", 0) ?: 0
+        val activeFound = diag?.optBoolean("activePokemonFound", false) == true
+        val diagnosticText = " · Protocolo: $frames JSON, welcome $welcomeCount, estado $estadoCount, última: $lastType · Estrutura: $huntsWithSpecies Hunts/$speciesEntries grupos de espécies, $statsCount Pokémon com stats, $speciesIdCount com speciesId, $typeEntries tipos, ativo ${if (activeFound) "ok" else "não encontrado"}"
         return if (player != null && hunts > 0) {
             "DADOS RECEBIDOS · ${accountNames[selectedAccount - 1].uppercase()}" to
                 "$hunts Hunts recebidas · Equipe: $teamCount Pokémon · Catálogo de combate: ${if (combatReady) "recebido" else "incompleto"} · Treinador Nv. $level · Hunt: $hunt · Pokémon ativo: $pokemon$marketText$diagnosticText · $freshness. Captura observacional; ranking comparativo ainda não está integrado."
