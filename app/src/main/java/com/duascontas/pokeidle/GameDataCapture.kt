@@ -63,6 +63,20 @@ object GameDataCapture {
   let socket = null;
   let samples = [];
   let kills = [];
+  let marketData = null;
+  const safeMarketLine = (line) => {
+    const f = line && line.ficha ? line.ficha : {};
+    const ficha = {};
+    for (const k of ['id','speciesId','nome','level','nota','ivTotal','quality','potencia','shiny','tmAoe','tmElemental','refinoTotal','stats','ivs']) {
+      if (f[k] !== undefined) ficha[k] = f[k];
+    }
+    const out = {};
+    for (const k of ['id','tipo','moeda','bruto','preco','em','criadoEm','compravelEm','expiraEm','pokemonId']) {
+      if (line && line[k] !== undefined) out[k] = line[k];
+    }
+    out.ficha = ficha;
+    return out;
+  };
   const safePokemon = (p) => ({
     id: p.id, speciesId: p.speciesId, nome: p.nome, level: p.level, xp: p.xp,
     ivs: p.ivs, stats: p.stats, tipos: p.tipos, tmAoe: !!p.tmAoe,
@@ -115,7 +129,7 @@ object GameDataCapture {
         activeId: state.activeId, huntSlug: state.huntSlug,
         activePokemon: active, pokemonCount: pokemons.length, pokemons
       },
-      measurements: measure()
+      measurements: measure(), market: marketData
     });
   };
   const merge = (partial) => {
@@ -176,6 +190,14 @@ object GameDataCapture {
                 if (ev && ev.k === 'morte' && ev.quem === 'selvagem') kills.push(Date.now());
               }
               publish('batalha');
+            } else if (msg.t === 'market' && Array.isArray(msg.linhas)) {
+              marketData = {
+                aba: msg.aba || null, pagina: Number(msg.pagina) || 0,
+                total: Number(msg.total) || 0, porPagina: Number(msg.porPagina) || 0,
+                temMais: !!msg.temMais,
+                linhas: msg.linhas.map(safeMarketLine)
+              };
+              send({ kind: 'market', status: 'connected', market: marketData });
             }
           });
         }
