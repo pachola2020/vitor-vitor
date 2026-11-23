@@ -177,6 +177,9 @@ object GameDataCapture {
     lastType: null, lastMessageAt: 0, lastPublishAt: 0, marketMessageKeys: [], marketLineKeys: [], fieldMessageKeys: [],
     typeCounts: {}, battleEventKinds: {}, battleEventKeys: {}, battleEventSamples: {}, lastMessageKeys: []
   };
+  // Telemetria exploratória: registra apenas eventos cujos nomes/campos mencionem Prey/presa.
+  // A ausência de sinal não prova que a mecânica não exista; o formato do jogo ainda precisa ser observado.
+  const preyTelemetry = { eventCounts: {}, samples: [], lastAt: 0 };
   const safeMarketLine = (line) => {
     const f = line && (line.ficha || line.pokemon) ? (line.ficha || line.pokemon) : {};
     const ficha = {};
@@ -679,11 +682,26 @@ object GameDataCapture {
 
   // A análise pesada só é iniciada quando o usuário solicita pelo painel nativo.
   window.__pokeIdleRunHuntAnalysis = () => {
-    if (!state || !Array.isArray(state.pokemons) || !state.pokemons.length || !hunts.length || !catalogData) return false;
-    if (analysisBusy || analysisScheduled) return false;
+    if (!state || !Array.isArray(state.pokemons) || !state.pokemons.length || !hunts.length || !catalogData) {
+      return {
+        accepted: false,
+        reason: 'dados_indisponiveis',
+        details: {
+          hasState: !!state,
+          pokemonCount: Array.isArray(state?.pokemons) ? state.pokemons.length : 0,
+          huntsCount: hunts.length,
+          catalogReady: !!catalogData,
+          pokemonWithStats: Array.isArray(state?.pokemons) ? state.pokemons.filter(p => p && p.stats).length : 0
+        }
+      };
+    }
+    if (analysisBusy) return { accepted: true, reason: 'em_execucao' };
+    if (analysisScheduled) return { accepted: true, reason: 'ja_agendada' };
     lastAnalysisKey = '';
     scheduleHuntAnalysis();
-    return analysisScheduled;
+    return analysisScheduled
+      ? { accepted: true, reason: 'agendada' }
+      : { accepted: false, reason: 'nao_agendada', details: { inputKeyReady: !!getHuntAnalysisInputKey() } };
   };
 
   const publish = (kind, force = false) => {
@@ -740,6 +758,7 @@ object GameDataCapture {
       },
       gameSession: readGameSession(),
       huntAnalysis,
+      preyTelemetry: { eventCounts: { ...preyTelemetry.eventCounts }, samples: preyTelemetry.samples.slice(-40), lastAt: preyTelemetry.lastAt },
       measurements: metrics, market: marketData, fieldData,
       diagnostics: {
         ...diagnostics,
@@ -912,6 +931,24 @@ object GameDataCapture {
                     diagnostics.battleEventSamples[ev.k].push(sample);
                   }
                 }
+                if (ev) {
+                  const preyText = [ev.k, ...Object.keys(ev), ...Object.values(ev).filter(v => typeof v === 'string')].join(' ').toLowerCase();
+                  if (/\\bprey\\b|presa|preda/.test(preyText)) {
+                    const eventName = String(ev.k || 'evento');
+                    preyTelemetry.eventCounts[eventName] = (preyTelemetry.eventCounts[eventName] || 0) + 1;
+                    preyTelemetry.lastAt = Date.now();
+                    if (preyTelemetry.samples.length < 40) {
+                      const sample = { k: eventName, at: preyTelemetry.lastAt, keys: Object.keys(ev).slice(0, 24) };
+                      for (const key of Object.keys(ev).slice(0, 24)) {
+                        if (/token|cookie|auth|password|senha|email|session|credential/i.test(key)) continue;
+                        const value = ev[key];
+                        if (value == null || ['number','boolean'].includes(typeof value)) sample[key] = value;
+                        else if (typeof value === 'string') sample[key] = value.slice(0, 100);
+                      }
+                      preyTelemetry.samples.push(sample);
+                    }
+                  }
+                }
                 if (ev && ev.k === 'morte' && ev.quem === 'selvagem') kills.push(Date.now());
                 if (ev && ev.k === 'capturado' && ev.pokemon && ev.pokemon.shiny) shinyCaptureTimes.push(Date.now());
               }
@@ -980,7 +1017,7 @@ object CaptureStore {
             // Eventos de conexão não apagam o último snapshot completo recebido.
             val kind = data.optString("kind")
             val previous = read(context, accountId)
-            val merged = if (previous != null && (kind == "connection" || kind == "capture-ready" || kind == "market")) {
+            val merged = if (previous != null && (kind == "connection" || kind == "capture-ready" || kind == "market" || kind == "analysis-control")) {
                 JSONObject(previous.toString()).apply {
                     val keys = data.keys()
                     while (keys.hasNext()) {
