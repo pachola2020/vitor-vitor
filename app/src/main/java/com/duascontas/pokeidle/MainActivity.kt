@@ -220,11 +220,33 @@ class MainActivity : Activity() {
     }
 
     private fun metricCard(title: String): View = column().apply {
+        val display = metricDisplay(title)
         setPadding(dp(12), dp(10), dp(12), dp(10))
         setBackgroundColor(PANEL)
         addView(label(title, 10f, MUTED, true))
-        addView(label("—", 25f, TEXT, true))
-        addView(label("aguardando dados", 10f, MUTED))
+        addView(label(display.first, 25f, TEXT, true))
+        addView(label(display.second, 10f, MUTED))
+    }
+
+    private fun metricDisplay(title: String): Pair<String, String> {
+        val data = CaptureStore.read(this, selectedAccount)
+        val m = data?.optJSONObject("measurements")
+        val minutes = m?.optInt("sampleMinutes", 0) ?: 0
+        val pair = when (title) {
+            "XP DO POKÉMON / H" -> m?.optLong("xpPokemonH", -1L) ?: -1L to "XP medido"
+            "XP DO TREINADOR / H" -> m?.optLong("xpTrainerH", -1L) ?: -1L to "XP medido"
+            "ABATES / H" -> m?.optLong("killsH", -1L) ?: -1L to "abates observados"
+            "SOBREVIVÊNCIA" -> m?.optInt("survivalPct", -1) ?: -1 to "amostras com HP > 0"
+            else -> -1L to "aguardando medição"
+        }
+        val value = pair.first
+        if (value < 0) {
+            val detail = if (minutes > 0) "coletando · ${minutes} min" else pair.second
+            return "—" to detail
+        }
+        val formatted = if (title == "SOBREVIVÊNCIA") "${value}%" else "%,d".format(value)
+        val detail = if (title.contains("XP / H") || title == "ABATES / H") "janela: ${minutes} min" else pair.second
+        return formatted to detail
     }
 
     private fun addInfoCard(title: String, description: String) {
