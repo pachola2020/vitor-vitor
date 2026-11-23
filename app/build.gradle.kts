@@ -16,8 +16,8 @@ android {
         applicationId = "com.duascontas.pokeidle.assistant.v2"
         minSdk = 28
         targetSdk = 34
-        versionCode = 46
-        versionName = "0.5.41-market-sales-insights" // All explicit cookie flushes run off the UI thread
+        versionCode = 47
+        versionName = "0.6.0-integrated-hunter-market" // Consolidated Hunt, market, resources and account insights
     }
 
     signingConfigs {
