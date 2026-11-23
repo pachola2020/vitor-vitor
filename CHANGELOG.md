@@ -14,11 +14,16 @@
 - Guarda Hunt, Pokémon ativo, nível e assinatura dos bônus para verificar se as condições permaneceram estáveis.
 - Amostras com menos de 5 minutos ou com Hunt, Pokémon, nível ou bônus alterados são registradas, mas excluídas das médias comparativas.
 - Histórico local limitado às 40 amostras mais recentes por conta.
+- As médias ON/OFF só comparam pares com a mesma Hunt, Pokémon ativo, nível e assinatura dos bônus; amostras curtas ou com contexto alterado ficam fora das médias.
+- A duração usa o tempo ativo informado pelo jogo quando disponível, com fallback explicitamente identificado para o tempo entre marcações.
 - Telemetria passiva procura nomes/campos explícitos relacionados a Prey/presa sem presumir que a ausência desses sinais prove ausência da mecânica.
 
 ## Interface e desempenho
 
 - Hierarquia visual mais clara, cards com contraste e bordas mais suaves e cabeçalho com gradiente.
+- Telas de Progressão, Hunts, Pokémon, Recursos, Shiny e Mercado recarregam o snapshot da conta antes de exibir os dados, evitando depender de um painel antigo em memória.
+- Shiny mostra contadores e eventos observados, incluindo o consumo de bolas como proxy; não exibe probabilidade acumulada não validada.
+- Mercado diferencia ausência de mensagem de Mercado de mensagem recebida sem linhas, orientando a coleta da aba correta.
 - Mantida a interface nativa Android, sem adicionar bibliotecas visuais pesadas.
 - Cálculos continuam sob demanda; o leitor mantém telemetria limitada e amostras de eventos com tamanho máximo.
 
