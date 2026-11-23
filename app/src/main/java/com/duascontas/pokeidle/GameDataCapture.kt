@@ -703,7 +703,6 @@ object GameDataCapture {
       coinsBalance: coinData.value, currencySource: coinData.source,
       gold: coinData.value, coins: coinData.value, xpTreinador: Number(state.xp) || 0,
       activeId: state.activeId, huntSlug: state.huntSlug, outlandTier: state.outlandTier ?? null,
-      team, pokemonCount: pokemons.length,
       gameAuto: {
         autoPotion: !!automation.autoPotion, autoRevive: !!automation.autoRevive,
         autoBall: !!automation.autoBall, ballIds: automation.ballIds ?? [],
@@ -727,7 +726,7 @@ object GameDataCapture {
         level: state.level, xp: Number(state.xp) || 0, outlandTier: state.outlandTier ?? null,
         coins: coinData.value, gold: coinData.value,
         activeId: state.activeId, huntSlug: state.huntSlug,
-        activePokemon: active, pokemonCount: pokemons.length, pokemons
+        pokemons
       },
       gameSession: readGameSession(),
       huntAnalysis,
