@@ -18,7 +18,7 @@ class MainActivity : Activity() {
 
     companion object {
         // Página onde ficam as versões novas do app (confira se o nome do repositório está certo)
-        const val RELEASES_URL = "https://github.com/pachola2020/pokeidle-contas/releases"
+        const val RELEASES_URL = "https://github.com/pachola2020/vitor-vitor/releases"
     }
 
     private lateinit var status: TextView
@@ -32,7 +32,7 @@ class MainActivity : Activity() {
             setPadding(pad, pad * 2, pad, pad)
         }
 
-        col.addView(text("PokeIdle - Contas", 22f))
+        col.addView(text("PokeIdle Assistant (Teste)", 22f))
         col.addView(text("Três contas em janelas flutuantes, com login separado, mais a janela Hunt (ranking de hunts).", 14f))
 
         status = text("", 15f)
