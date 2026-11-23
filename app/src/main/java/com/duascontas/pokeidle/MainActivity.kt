@@ -106,9 +106,9 @@ class MainActivity : Activity() {
 
         val top = row()
         val brand = column()
-        brand.addView(label("POKEIDLE", 12f, ACCENT, true))
-        brand.addView(label("Assistant", 28f, TEXT, true))
-        brand.addView(label("Painel pessoal de acompanhamento", 13f, MUTED))
+        brand.addView(label("POKEIDLE  /  ASSISTANT", 10f, ACCENT, true))
+        brand.addView(label("Painel de inteligência", 23f, TEXT, true))
+        brand.addView(label("Contas, Hunts e experimentos em um só lugar", 12f, MUTED))
         top.addView(brand, LinearLayout.LayoutParams(0, -2, 1f))
         val version = label("VERSÃO\n${BuildConfig.VERSION_NAME}", 11f, MUTED, true).apply {
             gravity = Gravity.CENTER
