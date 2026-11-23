@@ -76,7 +76,7 @@ class MainActivity : Activity() {
         brand.addView(label("Assistant", 28f, TEXT, true))
         brand.addView(label("Painel pessoal de acompanhamento", 13f, MUTED))
         top.addView(brand, LinearLayout.LayoutParams(0, -2, 1f))
-        val version = label("TESTE\n0.5.15", 11f, MUTED, true).apply {
+        val version = label("TESTE\n0.5.16", 11f, MUTED, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(10), dp(8), dp(10), dp(8))
             setBackgroundColor(PANEL_ALT)
@@ -267,10 +267,11 @@ class MainActivity : Activity() {
         val fieldKeys = diag?.optJSONArray("fieldDataKeys")?.let { arr ->
             (0 until arr.length()).joinToString(", ") { arr.optString(it) }
         } ?: "aguardando"
+        val geometryHints = diag?.optJSONArray("fieldGeometryHints")?.length() ?: 0
         val marketKeys = diag?.optJSONArray("marketMessageKeys")?.let { arr ->
             (0 until arr.length()).joinToString(", ") { arr.optString(it) }
         } ?: "aguardando"
-        val diagnosticText = " · Protocolo: $frames JSON, welcome $welcomeCount, estado $estadoCount, última: $lastType · Tipos de mensagem: $messageTypes · Eventos de batalha: $battleKinds ($battleKeys) amostras=$battleSamples · Sessão oficial: ${if (sessionAvailable) "disponível" else "não localizada"} [$sessionKeys] · Campo: $fieldCount eventos [$fieldKeys] · Chaves do mercado: $marketKeys · Estrutura: $huntsWithSpecies Hunts/$speciesEntries grupos de espécies, $statsCount Pokémon com stats, $speciesIdCount com speciesId, $typeEntries tipos, ativo ${if (activeFound) "ok" else "não encontrado"}"
+        val diagnosticText = " · Protocolo: $frames JSON, welcome $welcomeCount, estado $estadoCount, última: $lastType · Tipos de mensagem: $messageTypes · Eventos de batalha: $battleKinds ($battleKeys) amostras=$battleSamples · Sessão oficial: ${if (sessionAvailable) "disponível" else "não localizada"} [$sessionKeys] · Campo: $fieldCount eventos [$fieldKeys], $geometryHints estruturas espaciais candidatas · Chaves do mercado: $marketKeys · Estrutura: $huntsWithSpecies Hunts/$speciesEntries grupos de espécies, $statsCount Pokémon com stats, $speciesIdCount com speciesId, $typeEntries tipos, ativo ${if (activeFound) "ok" else "não encontrado"}"
         return if (player != null && hunts > 0) {
             "DADOS RECEBIDOS · ${accountNames[selectedAccount - 1].uppercase()}" to
                 "$hunts Hunts recebidas · Equipe: $teamCount Pokémon · Catálogo de combate: ${if (combatReady) "recebido" else "incompleto"} · Treinador Nv. $level · Hunt: $hunt · Pokémon ativo: $pokemon$marketText$diagnosticText · $freshness. Captura observacional; Hunt Analyzer preliminar disponível no menu; calibragem de geometria pendente."
