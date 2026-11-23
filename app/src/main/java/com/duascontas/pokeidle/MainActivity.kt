@@ -273,7 +273,7 @@ class MainActivity : Activity() {
         val diagnosticText = " · Protocolo: $frames JSON, welcome $welcomeCount, estado $estadoCount, última: $lastType · Tipos de mensagem: $messageTypes · Eventos de batalha: $battleKinds ($battleKeys) amostras=$battleSamples · Sessão oficial: ${if (sessionAvailable) "disponível" else "não localizada"} [$sessionKeys] · Campo: $fieldCount eventos [$fieldKeys] · Chaves do mercado: $marketKeys · Estrutura: $huntsWithSpecies Hunts/$speciesEntries grupos de espécies, $statsCount Pokémon com stats, $speciesIdCount com speciesId, $typeEntries tipos, ativo ${if (activeFound) "ok" else "não encontrado"}"
         return if (player != null && hunts > 0) {
             "DADOS RECEBIDOS · ${accountNames[selectedAccount - 1].uppercase()}" to
-                "$hunts Hunts recebidas · Equipe: $teamCount Pokémon · Catálogo de combate: ${if (combatReady) "recebido" else "incompleto"} · Treinador Nv. $level · Hunt: $hunt · Pokémon ativo: $pokemon$marketText$diagnosticText · $freshness. Captura observacional; ranking comparativo ainda não está integrado."
+                "$hunts Hunts recebidas · Equipe: $teamCount Pokémon · Catálogo de combate: ${if (combatReady) "recebido" else "incompleto"} · Treinador Nv. $level · Hunt: $hunt · Pokémon ativo: $pokemon$marketText$diagnosticText · $freshness. Captura observacional; Hunt Analyzer preliminar disponível no menu; calibragem de geometria pendente."
         } else if (status == "connected") {
             "WEBSOCKET CONECTADO · AGUARDANDO QUADRO INICIAL" to
                 "A conexão abriu, mas ainda não chegou o quadro inicial. $diagnosticText · $freshness."
@@ -513,7 +513,7 @@ class MainActivity : Activity() {
                         currency.contains("gem") && isPokemon -> 0.075
                         else -> 0.15
                     }
-                    val fee = kotlin.math.ceil(gross * feeRate).toLong()
+                    val fee = if (currency.contains("gem")) kotlin.math.ceil(gross * feeRate).toLong() else (gross * feeRate).toLong()
                     appendLine("  Comissão estimada: ${"%,d".format(fee)} (${(feeRate * 100).toInt()}%)")
                     appendLine("  Líquido estimado se vender: ${"%,d".format((gross - fee).coerceAtLeast(0L))} $currencyLabel")
                 }
