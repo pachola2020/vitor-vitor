@@ -407,6 +407,8 @@ class MainActivity : Activity() {
                 }
                 val goldBest = p.optJSONObject("melhorGold")
                 if (goldBest != null) appendLine("  Melhor Gold sem AoE: ${goldBest.optString("nome")} · ${"%,d".format(goldBest.optLong("goldH"))}/h")
+                val goldAoeBest = p.optJSONObject("melhorGoldComAoe")
+                if (goldAoeBest != null) appendLine("  Melhor Gold com AoE (hipótese): ${goldAoeBest.optString("nome")} · ${"%,d".format(goldAoeBest.optLong("goldHAoeHipotetico"))}/h")
                 appendLine("  Hunts analisadas: ${p.optInt("huntsAnalisadas", 0)}")
                 appendLine()
             }
