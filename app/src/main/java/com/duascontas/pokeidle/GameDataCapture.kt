@@ -146,12 +146,25 @@ object CaptureStore {
     private fun file(context: Context, accountId: Int) =
         File(context.filesDir, "pokeidle_capture_account_$accountId.json")
 
+    @Synchronized
     fun save(context: Context, accountId: Int, data: JSONObject) {
         val target = AtomicFile(file(context, accountId))
         var stream: java.io.FileOutputStream? = null
         try {
+            // Eventos de conexão não apagam o último snapshot completo recebido.
+            val kind = data.optString("kind")
+            val previous = read(context, accountId)
+            val merged = if (previous != null && (kind == "connection" || kind == "capture-ready")) {
+                JSONObject(previous.toString()).apply {
+                    val keys = data.keys()
+                    while (keys.hasNext()) {
+                        val key = keys.next()
+                        put(key, data.get(key))
+                    }
+                }
+            } else data
             stream = target.startWrite()
-            stream.write(data.toString().toByteArray(StandardCharsets.UTF_8))
+            stream.write(merged.toString().toByteArray(StandardCharsets.UTF_8))
             target.finishWrite(stream)
         } catch (e: Exception) {
             if (stream != null) target.failWrite(stream)
