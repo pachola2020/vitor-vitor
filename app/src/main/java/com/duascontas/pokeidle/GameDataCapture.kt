@@ -68,7 +68,8 @@ object GameDataCapture {
   const diagnostics = {
     socketSeen: 0, textFrames: 0, jsonFrames: 0, binaryFrames: 0,
     welcome: 0, estado: 0, batalha: 0, market: 0,
-    lastType: null, lastMessageAt: 0, lastPublishAt: 0
+    lastType: null, lastMessageAt: 0, lastPublishAt: 0,
+    typeCounts: {}, battleEventKinds: {}, lastMessageKeys: []
   };
   const safeMarketLine = (line) => {
     const f = line && line.ficha ? line.ficha : {};
@@ -253,6 +254,8 @@ object GameDataCapture {
             diagnostics.jsonFrames++;
             diagnostics.lastType = typeof msg.t === 'string' ? msg.t : 'sem-t';
             diagnostics.lastMessageAt = Date.now();
+            diagnostics.typeCounts[diagnostics.lastType] = (diagnostics.typeCounts[diagnostics.lastType] || 0) + 1;
+            diagnostics.lastMessageKeys = Object.keys(msg).slice(0, 24);
             if (msg.t === 'welcome') {
               diagnostics.welcome++;
               state = null;
@@ -315,6 +318,9 @@ object GameDataCapture {
             } else if (msg.t === 'batalha' && Array.isArray(msg.ev)) {
               diagnostics.batalha++;
               for (const ev of msg.ev) {
+                if (ev && typeof ev.k === 'string') {
+                  diagnostics.battleEventKinds[ev.k] = (diagnostics.battleEventKinds[ev.k] || 0) + 1;
+                }
                 if (ev && ev.k === 'morte' && ev.quem === 'selvagem') kills.push(Date.now());
               }
               publish('batalha');
