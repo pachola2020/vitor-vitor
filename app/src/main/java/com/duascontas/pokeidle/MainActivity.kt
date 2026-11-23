@@ -258,6 +258,11 @@ class MainActivity : Activity() {
         val messageTypes = diag?.optJSONObject("typeCounts")?.toString() ?: "{}"
         val battleKinds = diag?.optJSONObject("battleEventKinds")?.toString() ?: "{}"
         val battleKeys = diag?.optJSONObject("battleEventKeys")?.toString() ?: "{}"
+        val battleSamples = diag?.optJSONObject("battleEventSamples")?.toString() ?: "{}"
+        val sessionAvailable = diag?.optBoolean("gameSessionAvailable", false) == true
+        val sessionKeys = diag?.optJSONArray("gameSessionKeys")?.let { arr ->
+            (0 until arr.length()).joinToString(", ") { arr.optString(it) }
+        } ?: "aguardando"
         val fieldCount = diag?.optInt("field", 0) ?: 0
         val fieldKeys = diag?.optJSONArray("fieldDataKeys")?.let { arr ->
             (0 until arr.length()).joinToString(", ") { arr.optString(it) }
@@ -265,7 +270,7 @@ class MainActivity : Activity() {
         val marketKeys = diag?.optJSONArray("marketMessageKeys")?.let { arr ->
             (0 until arr.length()).joinToString(", ") { arr.optString(it) }
         } ?: "aguardando"
-        val diagnosticText = " · Protocolo: $frames JSON, welcome $welcomeCount, estado $estadoCount, última: $lastType · Tipos de mensagem: $messageTypes · Eventos de batalha: $battleKinds ($battleKeys) · Campo: $fieldCount eventos [$fieldKeys] · Chaves do mercado: $marketKeys · Estrutura: $huntsWithSpecies Hunts/$speciesEntries grupos de espécies, $statsCount Pokémon com stats, $speciesIdCount com speciesId, $typeEntries tipos, ativo ${if (activeFound) "ok" else "não encontrado"}"
+        val diagnosticText = " · Protocolo: $frames JSON, welcome $welcomeCount, estado $estadoCount, última: $lastType · Tipos de mensagem: $messageTypes · Eventos de batalha: $battleKinds ($battleKeys) amostras=$battleSamples · Sessão oficial: ${if (sessionAvailable) "disponível" else "não localizada"} [$sessionKeys] · Campo: $fieldCount eventos [$fieldKeys] · Chaves do mercado: $marketKeys · Estrutura: $huntsWithSpecies Hunts/$speciesEntries grupos de espécies, $statsCount Pokémon com stats, $speciesIdCount com speciesId, $typeEntries tipos, ativo ${if (activeFound) "ok" else "não encontrado"}"
         return if (player != null && hunts > 0) {
             "DADOS RECEBIDOS · ${accountNames[selectedAccount - 1].uppercase()}" to
                 "$hunts Hunts recebidas · Equipe: $teamCount Pokémon · Catálogo de combate: ${if (combatReady) "recebido" else "incompleto"} · Treinador Nv. $level · Hunt: $hunt · Pokémon ativo: $pokemon$marketText$diagnosticText · $freshness. Captura observacional; ranking comparativo ainda não está integrado."
@@ -447,14 +452,22 @@ class MainActivity : Activity() {
         val balls = sumJsonObject(session?.optJSONObject("bolas"))
         val seen = nullableLong(session, "shiniesVistos")
         val captured = nullableLong(session, "shinies")
+        val diag = data?.optJSONObject("diagnostics")
+        val battleKinds = diag?.optJSONObject("battleEventKinds")?.toString() ?: "{}"
+        val battleSamples = diag?.optJSONObject("battleEventSamples")?.toString() ?: "{}"
+        val sessionAvailable = diag?.optBoolean("gameSessionAvailable", false) == true
         val lines = buildString {
             appendLine("Bolas consumidas na sessão: ${balls ?: "aguardando"}")
             appendLine("Shinies vistos (contador do jogo): ${seen ?: "aguardando"}")
             appendLine("Shinies registrados (contador do jogo): ${captured ?: "aguardando"}")
+            appendLine("Contador local da sessão encontrado: ${if (sessionAvailable) "sim" else "não"}")
+            appendLine()
+            appendLine("Eventos de batalha observados: $battleKinds")
+            appendLine("Amostras sanitizadas de eventos: $battleSamples")
             appendLine()
             appendLine("Regra oficial: chance-base de 1 em 24.000 por lançamento elegível; falha também consome a tentativa. A Outland não gera Shiny.")
             appendLine()
-            append("A probabilidade acumulada ainda não é exibida: o total de bolas da sessão pode incluir espécies sem forma Shiny e áreas não elegíveis. Não vou tratar todas as bolas como tentativas válidas.")
+            append("A probabilidade acumulada continua bloqueada até identificar o evento real de lançamento e confirmar espécie com forma Shiny, área elegível e bônus ativos. O contador total de bolas não é suficiente.")
         }
         showDialog("Shiny Hunt", lines)
     }
