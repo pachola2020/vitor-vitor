@@ -64,6 +64,11 @@ object GameDataCapture {
   let samples = [];
   let kills = [];
   let marketData = null;
+  const diagnostics = {
+    socketSeen: 0, textFrames: 0, jsonFrames: 0, binaryFrames: 0,
+    welcome: 0, estado: 0, batalha: 0, market: 0,
+    lastType: null, lastMessageAt: 0, lastPublishAt: 0
+  };
   const safeMarketLine = (line) => {
     const f = line && line.ficha ? line.ficha : {};
     const ficha = {};
@@ -110,8 +115,14 @@ object GameDataCapture {
       ? Math.round(100 * hpSamples.filter(s => s.hp > 0).length / hpSamples.length) : null;
     return { xpPokemonH, xpTrainerH, killsH, survivalPct, sampleMinutes: minutes, killSamples: kills.length };
   };
-  const publish = (kind) => {
+  const publish = (kind, force = false) => {
     if (!state) return;
+    const now = Date.now();
+    // Atualizações incrementais podem chegar muitas vezes por segundo.
+    // Amostra tudo em memória, mas persiste no Android no máximo a cada 8 s.
+    if (!force && (kind === 'estado' || kind === 'batalha') &&
+        now - diagnostics.lastPublishAt < 8000) return;
+    diagnostics.lastPublishAt = now;
     const pokemons = Array.isArray(state.pokemons) ? state.pokemons.map(safePokemon) : [];
     const active = pokemons.find(p => String(p.id) === String(state.activeId)) || null;
     send({
@@ -129,7 +140,8 @@ object GameDataCapture {
         activeId: state.activeId, huntSlug: state.huntSlug,
         activePokemon: active, pokemonCount: pokemons.length, pokemons
       },
-      measurements: measure(), market: marketData
+      measurements: measure(), market: marketData,
+      diagnostics: { ...diagnostics }
     });
   };
   const merge = (partial) => {
@@ -161,18 +173,29 @@ object GameDataCapture {
         const u = new URL(String(args[0]), location.href);
         if (u.host === location.host) {
           socket = ws;
+          diagnostics.socketSeen++;
           ws.addEventListener('open', () => send({ kind: 'connection', status: 'connected' }));
           ws.addEventListener('close', () => send({ kind: 'connection', status: 'disconnected' }));
           ws.addEventListener('message', (event) => {
-            if (socket !== ws || typeof event.data !== 'string') return;
+            if (socket !== ws) return;
+            if (typeof event.data !== 'string') {
+              diagnostics.binaryFrames++;
+              return;
+            }
+            diagnostics.textFrames++;
             let msg;
             try { msg = JSON.parse(event.data); } catch (_) { return; }
+            diagnostics.jsonFrames++;
+            diagnostics.lastType = typeof msg.t === 'string' ? msg.t : 'sem-t';
+            diagnostics.lastMessageAt = Date.now();
             if (msg.t === 'welcome') {
+              diagnostics.welcome++;
               state = null;
               hunts = Array.isArray(msg.hunts) ? msg.hunts : [];
               merge(msg.estado);
-              publish('welcome');
+              publish('welcome', true);
             } else if (msg.t === 'estado' && state) {
+              diagnostics.estado++;
               merge(msg.estado);
               const list = Array.isArray(state.pokemons) ? state.pokemons : [];
               const active = list.find(p => String(p.id) === String(state.activeId));
@@ -186,18 +209,21 @@ object GameDataCapture {
               }
               publish('estado');
             } else if (msg.t === 'batalha' && Array.isArray(msg.ev)) {
+              diagnostics.batalha++;
               for (const ev of msg.ev) {
                 if (ev && ev.k === 'morte' && ev.quem === 'selvagem') kills.push(Date.now());
               }
               publish('batalha');
             } else if (msg.t === 'market' && Array.isArray(msg.linhas)) {
+              diagnostics.market++;
               marketData = {
                 aba: msg.aba || null, pagina: Number(msg.pagina) || 0,
                 total: Number(msg.total) || 0, porPagina: Number(msg.porPagina) || 0,
                 temMais: !!msg.temMais,
                 linhas: msg.linhas.map(safeMarketLine)
               };
-              send({ kind: 'market', status: 'connected', market: marketData });
+              send({ kind: 'market', status: 'connected', market: marketData,
+                diagnostics: { ...diagnostics }, updatedAt: Date.now() });
             }
           });
         }
@@ -205,7 +231,8 @@ object GameDataCapture {
       return ws;
     }
   });
-  send({ kind: 'capture-ready', status: 'listening' });
+  send({ kind: 'capture-ready', status: 'listening',
+    diagnostics: { ...diagnostics }, updatedAt: Date.now() });
 })();
     """.trimIndent()
 }
