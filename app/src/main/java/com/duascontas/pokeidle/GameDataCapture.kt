@@ -61,12 +61,41 @@ object GameDataCapture {
   let state = null;
   let hunts = [];
   let socket = null;
+  let samples = [];
+  let kills = [];
   const safePokemon = (p) => ({
-    id: p.id, speciesId: p.speciesId, nome: p.nome, level: p.level,
+    id: p.id, speciesId: p.speciesId, nome: p.nome, level: p.level, xp: p.xp,
     ivs: p.ivs, stats: p.stats, tipos: p.tipos, tmAoe: !!p.tmAoe,
     tmElemental: !!p.tmElemental, maxHp: p.maxHp, hp: p.hp,
     shiny: !!p.shiny, potencia: p.potencia, nota: p.nota
   });
+  const measure = () => {
+    const now = Date.now();
+    samples = samples.filter(s => now - s.t <= 15 * 60 * 1000);
+    kills = kills.filter(t => now - t <= 15 * 60 * 1000);
+    let xpPokemonH = null, xpTrainerH = null, minutes = 0;
+    if (samples.length >= 2) {
+      const first = samples[0], last = samples[samples.length - 1];
+      const elapsed = last.t - first.t;
+      minutes = Math.round(elapsed / 60000);
+      if (elapsed >= 120000) {
+        let p = 0, tr = 0;
+        for (let i = 1; i < samples.length; i++) {
+          p += Math.max(0, samples[i].px - samples[i - 1].px);
+          tr += Math.max(0, samples[i].tx - samples[i - 1].tx);
+        }
+        xpPokemonH = Math.round(p * 3600000 / elapsed);
+        xpTrainerH = Math.round(tr * 3600000 / elapsed);
+      }
+    }
+    const killSpan = kills.length >= 2 ? kills[kills.length - 1] - kills[0] : 0;
+    const killsH = kills.length >= 5 && killSpan >= 120000
+      ? Math.round((kills.length - 1) * 3600000 / killSpan) : null;
+    const hpSamples = samples.filter(s => s.hp != null && s.maxHp > 0);
+    const survivalPct = hpSamples.length
+      ? Math.round(100 * hpSamples.filter(s => s.hp > 0).length / hpSamples.length) : null;
+    return { xpPokemonH, xpTrainerH, killsH, survivalPct, sampleMinutes: minutes, killSamples: kills.length };
+  };
   const publish = (kind) => {
     if (!state) return;
     const pokemons = Array.isArray(state.pokemons) ? state.pokemons.map(safePokemon) : [];
@@ -81,10 +110,12 @@ object GameDataCapture {
         })) : []
       })),
       player: {
-        level: state.level, activeId: state.activeId,
-        huntSlug: state.huntSlug, activePokemon: active,
-        pokemonCount: pokemons.length, pokemons
-      }
+        level: state.level, xp: Number(state.xp) || 0,
+        coins: state.coins ?? null, gold: state.gold ?? null,
+        activeId: state.activeId, huntSlug: state.huntSlug,
+        activePokemon: active, pokemonCount: pokemons.length, pokemons
+      },
+      measurements: measure()
     });
   };
   const merge = (partial) => {
@@ -129,7 +160,22 @@ object GameDataCapture {
               publish('welcome');
             } else if (msg.t === 'estado' && state) {
               merge(msg.estado);
+              const list = Array.isArray(state.pokemons) ? state.pokemons : [];
+              const active = list.find(p => String(p.id) === String(state.activeId));
+              if (active) {
+                samples.push({
+                  t: Date.now(), px: Number(active.xp) || 0,
+                  tx: Number(state.xp) || 0,
+                  hp: Number.isFinite(Number(active.hp)) ? Number(active.hp) : null,
+                  maxHp: Number(active.maxHp) || 0
+                });
+              }
               publish('estado');
+            } else if (msg.t === 'batalha' && Array.isArray(msg.ev)) {
+              for (const ev of msg.ev) {
+                if (ev && ev.k === 'morte' && ev.quem === 'selvagem') kills.push(Date.now());
+              }
+              publish('batalha');
             }
           });
         }
