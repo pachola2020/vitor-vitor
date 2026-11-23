@@ -72,13 +72,13 @@ object GameDataCapture {
     typeCounts: {}, battleEventKinds: {}, lastMessageKeys: []
   };
   const safeMarketLine = (line) => {
-    const f = line && line.ficha ? line.ficha : {};
+    const f = line && (line.ficha || line.pokemon) ? (line.ficha || line.pokemon) : {};
     const ficha = {};
-    for (const k of ['id','speciesId','nome','level','nota','ivTotal','quality','potencia','shiny','tmAoe','tmElemental','refinoTotal','stats','ivs']) {
+    for (const k of ['id','speciesId','nome','level','nota','ivTotal','quality','potencia','shiny','tmAoe','tmElemental','refinoTotal','stats','ivs','poder','refino','natureza','habilidade','tipo1','tipo2']) {
       if (f[k] !== undefined) ficha[k] = f[k];
     }
     const out = {};
-    for (const k of ['id','tipo','moeda','bruto','preco','em','criadoEm','compravelEm','expiraEm','pokemonId']) {
+    for (const k of ['id','tipo','moeda','bruto','preco','em','criadoEm','compravelEm','expiraEm','pokemonId','comissao','taxa','liquido','valorLiquido','precoLiquido','dias','duracao','status','vendidoEm','compradoEm','precoVenda','categoria','itemId','nome','quantidade']) {
       if (line && line[k] !== undefined) out[k] = line[k];
     }
     out.ficha = ficha;
@@ -331,7 +331,8 @@ object GameDataCapture {
             } else if (msg.t === 'market') {
               diagnostics.market++;
               diagnostics.marketMessageKeys = Object.keys(msg).slice(0, 30);
-              const incoming = Array.isArray(msg.linhas) ? msg.linhas.map(safeMarketLine) : [];
+              const rawLines = [msg.linhas, msg.vendas, msg.historico, msg.registros, msg.itens].find(Array.isArray) || [];
+              const incoming = rawLines.map(safeMarketLine);
               diagnostics.marketLineKeys = incoming[0] ? Object.keys(incoming[0]) : [];
               if (incoming.length > 0) {
                 const page = Number(msg.pagina) || 0;
