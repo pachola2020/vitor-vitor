@@ -318,6 +318,12 @@ object GameDataCapture {
   let huntAnalysis = { status: 'aguardando', message: 'Aguardando dados e catálogo do jogo.' };
   let analysisBusy = false;
   let analysisScheduled = false;
+  let analysisTimer = null;
+  let scheduledAnalysisKey = '';
+  let lastAnalysisKey = '';
+  let lastAnalysisAt = 0;
+  const ANALYSIS_DEBOUNCE_MS = 12000;
+  const ANALYSIS_MIN_INTERVAL_MS = 60000;
   let analysisCatalog = null;
   let analysisModules = null;
 
@@ -543,9 +549,40 @@ object GameDataCapture {
     };
   };
 
-  const refreshHuntAnalysis = async () => {
+  const getHuntAnalysisInputKey = () => {
+    if (!state || !Array.isArray(state.pokemons) || !hunts.length) return '';
+    const pokemon = state.pokemons
+      .filter(p => p && p.id != null && p.speciesId != null && p.stats)
+      .map(p => ({
+        id: p.id, speciesId: p.speciesId, level: p.level, ivs: p.ivs,
+        stats: p.stats, tipos: p.tipos, tmAoe: p.tmAoe,
+        tmElemental: p.tmElemental, slot: p.slot
+      }));
+    const huntKey = hunts.map(h => ({
+      slug: h.slug, nivel: h.nivel,
+      especies: Array.isArray(h.especies)
+        ? h.especies.map(e => [e.pokeId, e.pontos]) : []
+    }));
+    try {
+      return JSON.stringify({
+        trainerLevel: state.level, activeId: state.activeId,
+        pokemon, hunts: huntKey,
+        typeTable: catalogData?.combate?.tabelaTipos || null
+      });
+    } catch (_) {
+      return '';
+    }
+  };
+
+  const refreshHuntAnalysis = async (expectedKey) => {
     if (analysisBusy) return;
+    const inputKey = expectedKey || getHuntAnalysisInputKey();
+    if (!inputKey || inputKey !== getHuntAnalysisInputKey()) {
+      scheduleHuntAnalysis();
+      return;
+    }
     analysisBusy = true;
+    lastAnalysisAt = Date.now();
     try {
       if (!state || !Array.isArray(state.pokemons) || !hunts.length || !catalogData) {
         huntAnalysis = { status: 'aguardando', message: 'Aguardando Pokémon, Hunts e catálogo.' };
@@ -561,8 +598,22 @@ object GameDataCapture {
           const teamA = a.slot != null ? 1 : 0, teamB = b.slot != null ? 1 : 0;
           if (teamA !== teamB) return teamB - teamA;
           return (Number(b.level) || 0) - (Number(a.level) || 0);
-        });
-      const results = candidates.slice(0, 20).map(pk => estimatePokemonHunts(pk, catalogData)).filter(Boolean);
+        }).slice(0, 20);
+      const results = [];
+      // Cede tempo ao WebView entre Pokémon para não monopolizar a thread do jogo.
+      for (const candidate of candidates) {
+        if (inputKey !== getHuntAnalysisInputKey()) break;
+        const result = estimatePokemonHunts(candidate, catalogData);
+        if (result) results.push(result);
+        await new Promise(resolve => setTimeout(resolve, 16));
+      }
+      if (inputKey !== getHuntAnalysisInputKey()) {
+        huntAnalysis = {
+          status: 'atualizando',
+          message: 'Os dados mudaram durante a análise; uma nova análise será agendada.'
+        };
+        return;
+      }
       huntAnalysis = {
         status: results.length ? 'estimativa_disponivel' : 'sem_dados',
         calculadoEm: Date.now(),
@@ -572,21 +623,32 @@ object GameDataCapture {
         modelo: 'estimativa teórica preliminar; sem geometria real da Hunt',
         pokemon: results
       };
+      lastAnalysisKey = inputKey;
     } catch (error) {
       huntAnalysis = { status: 'erro', message: String(error?.message || error).slice(0, 180) };
     } finally {
       analysisBusy = false;
       publish('analysis', true);
+      if (getHuntAnalysisInputKey() !== lastAnalysisKey) scheduleHuntAnalysis();
     }
   };
 
   const scheduleHuntAnalysis = () => {
-    if (analysisScheduled) return;
+    const inputKey = getHuntAnalysisInputKey();
+    if (!inputKey || inputKey === lastAnalysisKey || analysisBusy) return;
+    if (analysisScheduled && scheduledAnalysisKey === inputKey) return;
+    if (analysisTimer) clearTimeout(analysisTimer);
+    scheduledAnalysisKey = inputKey;
     analysisScheduled = true;
-    setTimeout(() => {
+    const throttleWait = Math.max(0, ANALYSIS_MIN_INTERVAL_MS - (Date.now() - lastAnalysisAt));
+    const delay = Math.max(ANALYSIS_DEBOUNCE_MS, throttleWait);
+    analysisTimer = setTimeout(() => {
       analysisScheduled = false;
-      refreshHuntAnalysis();
-    }, 1800);
+      analysisTimer = null;
+      const key = scheduledAnalysisKey;
+      scheduledAnalysisKey = '';
+      refreshHuntAnalysis(key);
+    }, delay);
   };
 
   const publish = (kind, force = false) => {
