@@ -585,7 +585,7 @@ class MainActivity : Activity() {
             }
             appendLine("CONFIABILIDADE E LIMITAÇÕES")
             appendLine("• Sem AoE e com AoE são rankings separados; a tela identifica se a TM está equipada.")
-            appendLine("• AoE usa provisoriamente 2,2 alvos por golpe; a geometria real de cada Hunt ainda não foi medida.")
+            appendLine("• AoE usa provisoriamente 2,0 alvos por golpe; a geometria real de cada Hunt ainda não foi medida.")
             appendLine("• Ritmo de caminhada/spawn é genérico. Dano e TTK são estimativas, não resultados observados.")
             appendLine("• Poções, mortes, revives e sobrevivência real ainda não entram neste ranking.")
             appendLine("• Use como triagem inicial; não como promessa de rendimento.")
