@@ -100,6 +100,7 @@ open class OverlayService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     override fun onCreate() {
         super.onCreate()
         startAsForeground()
