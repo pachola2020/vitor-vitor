@@ -64,6 +64,7 @@ object GameDataCapture {
   let samples = [];
   let kills = [];
   let marketData = null;
+  let catalogData = null;
   const diagnostics = {
     socketSeen: 0, textFrames: 0, jsonFrames: 0, binaryFrames: 0,
     welcome: 0, estado: 0, batalha: 0, market: 0,
@@ -83,9 +84,10 @@ object GameDataCapture {
     return out;
   };
   const safePokemon = (p) => ({
-    id: p.id, speciesId: p.speciesId, nome: p.nome, level: p.level, xp: p.xp,
-    ivs: p.ivs, stats: p.stats, tipos: p.tipos, tmAoe: !!p.tmAoe,
-    tmElemental: !!p.tmElemental, maxHp: p.maxHp, hp: p.hp,
+    id: p.id, pokeId: p.pokeId, speciesId: p.speciesId, nome: p.nome,
+    level: p.level, xp: p.xp, ivs: p.ivs, stats: p.stats,
+    tipos: p.tipos, tmAoe: !!(p.tmAoe ?? p.tm_aoe),
+    tmElemental: p.tmElemental ?? null, maxHp: p.maxHp, hp: p.hp,
     shiny: !!p.shiny, potencia: p.potencia, nota: p.nota
   });
   const measure = () => {
@@ -192,6 +194,33 @@ object GameDataCapture {
               diagnostics.welcome++;
               state = null;
               hunts = Array.isArray(msg.hunts) ? msg.hunts : [];
+              // Catálogo/constantes enviados no welcome pelo próprio servidor do jogo.
+              // Só guardamos dados públicos de jogo necessários ao analisador.
+              catalogData = {
+                combate: {
+                  tabelaTipos: msg.tabelaTipos ?? {},
+                  ampliacaoHunt: msg.ampliacaoHunt ?? 1.5,
+                  multHpSelvagem: msg.multHpSelvagem ?? 5,
+                  multDanoSelvagem: msg.multDanoSelvagem ?? 1.8
+                },
+                tiposBoost: Array.isArray(msg.tiposBoost) ? msg.tiposBoost : [],
+                captura: msg.captura ?? null,
+                chanceShiny: Number(msg.chanceShiny) || 0,
+                mercado: {
+                  catalogo: Array.isArray(msg.mercado?.catalogo)
+                    ? msg.mercado.catalogo.map(i => ({ id: i.id, nome: i.nome, categoria: i.categoria ?? null }))
+                    : []
+                },
+                itensNossos: Array.isArray(msg.itensNossos)
+                  ? msg.itensNossos.map(i => ({ id: i.id, name: i.name, npcPrice: i.npcPrice ?? null }))
+                  : [],
+                itensCompraveis: Array.isArray(msg.itensCompraveis)
+                  ? msg.itensCompraveis.map(i => ({ itemId: i.itemId, preco: i.preco }))
+                  : [],
+                catalogoBolas: Array.isArray(msg.catalogoBolas)
+                  ? msg.catalogoBolas.map(i => ({ id: i.id, nome: i.nome, priceGold: i.priceGold, compravel: !!i.compravel, catchRate: i.catchRate ?? null }))
+                  : []
+              };
               merge(msg.estado);
               publish('welcome', true);
             } else if (msg.t === 'estado' && state) {
