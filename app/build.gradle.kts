@@ -7,6 +7,10 @@ android {
     namespace = "com.duascontas.pokeidle"
     compileSdk = 34
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     defaultConfig {
         // Pacote separado para testar sem substituir o app que já está instalado.
         applicationId = "com.duascontas.pokeidle.assistant.v2"
