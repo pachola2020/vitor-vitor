@@ -56,6 +56,7 @@ open class OverlayService : Service() {
         const val HUNT_URL = "https://pokeidleguide.io/#hunt"
         const val ACTION_STOP = "com.duascontas.pokeidle.STOP"
         const val ACTION_RELOAD_ALL = "com.duascontas.pokeidle.RELOAD_ALL"
+        const val ACTION_RUN_HUNT_ANALYSIS = "com.duascontas.pokeidle.RUN_HUNT_ANALYSIS"
         const val ACTION_CLOSE_ALL = "com.duascontas.pokeidle.CLOSE_ALL"
         private const val CHANNEL_ID = "janelas"
         private const val MAX_RENDERER_RECOVERY_ATTEMPTS = 4
@@ -102,6 +103,15 @@ open class OverlayService : Service() {
             when (intent?.action) {
                 ACTION_RELOAD_ALL -> reloadOrRecover()
                 ACTION_CLOSE_ALL -> stopSelf()
+                ACTION_RUN_HUNT_ANALYSIS -> {
+                    val requestedAccount = intent.getIntExtra("accountId", -1)
+                    if (!isTool && requestedAccount == accountId) {
+                        web?.evaluateJavascript(
+                            "window.__pokeIdleRunHuntAnalysis && window.__pokeIdleRunHuntAnalysis()",
+                            null
+                        )
+                    }
+                }
             }
         }
     }
@@ -130,6 +140,7 @@ open class OverlayService : Service() {
         val filter = IntentFilter().apply {
             addAction(ACTION_RELOAD_ALL)
             addAction(ACTION_CLOSE_ALL)
+            addAction(ACTION_RUN_HUNT_ANALYSIS)
         }
         if (Build.VERSION.SDK_INT >= 33) {
             registerReceiver(ctrlReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
