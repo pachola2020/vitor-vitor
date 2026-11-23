@@ -123,7 +123,7 @@ class MainActivity : Activity() {
         val metricRows = listOf(
             listOf("XP DO POKÉMON / H", "XP DO TREINADOR / H"),
             listOf("COINS ATUAIS", "COINS LÍQUIDOS / H"),
-            listOf("ABATES / H", "SOBREVIVÊNCIA"),
+            listOf("ABATES / H", "HP POSITIVO / AMOSTRAS"),
             listOf("ENCONTROS SHINY / H", "SHINY CAPTURADOS")
         )
         metricRows.forEach { pair ->
@@ -316,12 +316,12 @@ class MainActivity : Activity() {
             return "—" to detail
         }
         val formatted = when (title) {
-            "SOBREVIVÊNCIA" -> "${value}%"
+            "HP POSITIVO / AMOSTRAS" -> "${value}%"
             "COINS LÍQUIDOS / H" -> (if (value > 0) "+" else "") + "%,d".format(value)
             else -> "%,d".format(value)
         }
         val detail = when (title) {
-            "SOBREVIVÊNCIA" -> "amostras com HP > 0"
+            "HP POSITIVO / AMOSTRAS" -> "percentual de amostras com HP > 0; não é chance de sobreviver"
             "COINS ATUAIS" -> "saldo da conta"
             "COINS LÍQUIDOS / H" -> "variação do saldo · ${minutes} min"
             else -> "janela: ${minutes} min"
