@@ -933,7 +933,7 @@ object GameDataCapture {
                 }
                 if (ev) {
                   const preyText = [ev.k, ...Object.keys(ev), ...Object.values(ev).filter(v => typeof v === 'string')].join(' ').toLowerCase();
-                  if (/\\bprey\\b|presa|preda/.test(preyText)) {
+                  if (/\bprey\b|presa|preda/.test(preyText)) {
                     const eventName = String(ev.k || 'evento');
                     preyTelemetry.eventCounts[eventName] = (preyTelemetry.eventCounts[eventName] || 0) + 1;
                     preyTelemetry.lastAt = Date.now();
