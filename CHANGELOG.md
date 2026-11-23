@@ -1,4 +1,4 @@
-# PokeIdle Assistant — próxima versão consolidada
+# PokeIdle Assistant 0.6.0 — versão consolidada
 
 ## Atualizações integradas
 
