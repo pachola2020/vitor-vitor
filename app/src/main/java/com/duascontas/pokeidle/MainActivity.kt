@@ -124,7 +124,7 @@ class MainActivity : Activity() {
             listOf("XP DO POKÉMON / H", "XP DO TREINADOR / H"),
             listOf("COINS ATUAIS", "COINS LÍQUIDOS / H"),
             listOf("ABATES / H", "HP POSITIVO / AMOSTRAS"),
-            listOf("ENCONTROS SHINY / H", "SHINY CAPTURADOS")
+            listOf("LANÇAMENTOS OBSERVADOS / H", "SHINY CAPTURADOS (24H)")
         )
         metricRows.forEach { pair ->
             val r = row()
@@ -141,7 +141,7 @@ class MainActivity : Activity() {
         sectionTitle("ANÁLISES")
         addInfoCard("PROGRESSÃO", "XP/h, Gold/h, abates/h e sobrevivência. Comparação por Hunt e por Pokémon.")
         addInfoCard("ECONOMIA", "Recursos negociáveis, vendas concluídas, taxas e lucro líquido estimado.")
-        addInfoCard("SHINY HUNT", "Encontros elegíveis, capturas, bônus aplicáveis e probabilidade acumulada.")
+        addInfoCard("SHINY HUNT", "Lançamentos estimados pelo consumo de bolas e capturas shiny observadas. A probabilidade acumulada só será exibida após validar a elegibilidade de cada lançamento.")
         addInfoCard("LEITOR DE HUNT", "Captura passiva de Hunts, Pokémon ativo e dados de equipe. O ranking calculado com e sem AoE será conectado na próxima etapa.")
         space(18)
 
@@ -308,6 +308,8 @@ class MainActivity : Activity() {
             "COINS LÍQUIDOS / H" -> nullableLong(m, "coinsNetH") ?: Long.MIN_VALUE
             "ABATES / H" -> nullableLong(m, "killsH") ?: -1L
             "HP POSITIVO / AMOSTRAS" -> (nullableLong(m, "survivalPct") ?: -1L)
+            "LANÇAMENTOS OBSERVADOS / H" -> nullableLong(m, "ballThrowsH") ?: -1L
+            "SHINY CAPTURADOS (24H)" -> nullableLong(m, "shinyCapturesObserved") ?: -1L
             else -> -1L
         }
         if (title == "") return "—" to ""
@@ -323,6 +325,8 @@ class MainActivity : Activity() {
         }
         val detail = when (title) {
             "HP POSITIVO / AMOSTRAS" -> "percentual de amostras com HP > 0; não é chance de sobreviver"
+            "LANÇAMENTOS OBSERVADOS / H" -> "estimativa via redução do estoque em hunt normal; não confirma cada arremesso"
+            "SHINY CAPTURADOS (24H)" -> "eventos de captura shiny observados nesta sessão de leitura"
             "COINS ATUAIS" -> "saldo da conta"
             "COINS LÍQUIDOS / H" -> "variação do saldo · ${minutes} min"
             else -> "janela: ${minutes} min"
