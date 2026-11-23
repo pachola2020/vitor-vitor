@@ -91,9 +91,9 @@ class MainActivity : Activity() {
             dashboardData = null
             val requestedAccount = selectedAccount
             val generation = ++dashboardLoadGeneration
-            Thread {
+            dashboardIo.execute {
                 val snapshot = CaptureStore.read(this, requestedAccount)
-                runOnUiThread {
+                mainHandler.post {
                     if (!isFinishing && selectedAccount == requestedAccount &&
                         generation == dashboardLoadGeneration
                     ) {
@@ -101,7 +101,7 @@ class MainActivity : Activity() {
                         renderDashboard(loadSnapshot = false)
                     }
                 }
-            }.start()
+            }
         }
 
         val top = row()
@@ -505,16 +505,21 @@ class MainActivity : Activity() {
                 addView(label("${p.optString("nome", "Pokémon")} · Nv. ${p.optInt("level", 0)}$active", 14f, TEXT, true))
                 if (noAoe != null) {
                     addView(label("SEM AoE · ${noAoe.optString("nome")}", 10f, MUTED, true))
-                    addView(label("XP ${"%,d".format(noAoe.optLong("xpPokemonH"))}/h   ·   Gold ${"%,d".format(noAoe.optLong("goldH"))}/h", 12f, TEXT))
-                    addView(label("${"%,d".format(noAoe.optLong("abatesH"))} abates/h", 10f, MUTED))
+                    addView(label("XP Pokémon ${"%,d".format(noAoe.optLong("xpPokemonH"))}/h", 12f, TEXT, true))
+                    addView(label("XP treinador ${"%,d".format(noAoe.optLong("xpTreinadorH"))}/h · Gold ${"%,d".format(noAoe.optLong("goldH"))}/h", 11f, MUTED))
+                    addView(label("${"%,d".format(noAoe.optLong("abatesH"))} abates/h · ${noAoe.optString("regiao", "região não informada")}", 10f, MUTED))
                 }
                 if (withAoe != null) {
                     val labelAoe = if (p.optBoolean("tmAoe")) "COM AoE · equipada" else "COM AoE · hipótese"
                     addView(label("$labelAoe · ${withAoe.optString("nome")}", 10f, ACCENT, true))
-                    addView(label("XP ${"%,d".format(withAoe.optLong("xpPokemonHAoeHipotetico"))}/h   ·   Gold ${"%,d".format(withAoe.optLong("goldHAoeHipotetico"))}/h", 12f, TEXT))
-                    addView(label("${"%,d".format(withAoe.optLong("abatesHAoeHipotetico"))} abates/h", 10f, MUTED))
+                    addView(label("XP Pokémon ${"%,d".format(withAoe.optLong("xpPokemonHAoeHipotetico"))}/h", 12f, TEXT, true))
+                    addView(label("XP treinador ${"%,d".format(withAoe.optLong("xpTreinadorHAoeHipotetico"))}/h · Gold ${"%,d".format(withAoe.optLong("goldHAoeHipotetico"))}/h", 11f, MUTED))
+                    addView(label("${"%,d".format(withAoe.optLong("abatesHAoeHipotetico"))} abates/h · ${withAoe.optString("regiao", "região não informada")}", 10f, MUTED))
                 }
-                if (gold != null) addView(label("Melhor Gold sem AoE: ${gold.optString("nome")}", 10f, MUTED))
+                if (gold != null) addView(label("Melhor Gold sem AoE: ${gold.optString("nome")} · ${"%,d".format(gold.optLong("goldH"))}/h", 10f, MUTED))
+                val goldAoe = p.optJSONObject("melhorGoldComAoe")
+                if (goldAoe != null) addView(label("Melhor Gold com AoE (hipótese): ${goldAoe.optString("nome")} · ${"%,d".format(goldAoe.optLong("goldHAoeHipotetico"))}/h", 10f, MUTED))
+                addView(label("${p.optInt("huntsAnalisadas", 0)} Hunts avaliadas · confiança baixa (modelo teórico)", 9f, MUTED))
             }
             root.addView(card)
             space(7)
