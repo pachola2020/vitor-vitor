@@ -28,23 +28,36 @@ object GameDataCapture {
             return
         }
 
-        WebViewCompat.addWebMessageListener(
-            webView,
-            "PokeIdleCapture",
-            setOf(ORIGIN)
-        ) { _, message: WebMessageCompat, sourceOrigin, isMainFrame, _ ->
-            if (!isMainFrame || sourceOrigin.toString() != ORIGIN) return@addWebMessageListener
-            try {
-                val payload = JSONObject(message.data ?: return@addWebMessageListener)
-                payload.put("accountId", accountId)
-                payload.put("updatedAt", System.currentTimeMillis())
-                CaptureStore.save(context, accountId, payload)
-            } catch (_: Exception) {
-                // Dados inválidos nunca podem interromper o jogo.
+        try {
+            WebViewCompat.addWebMessageListener(
+                webView,
+                "PokeIdleCapture",
+                setOf(ORIGIN)
+            ) { _, message: WebMessageCompat, sourceOrigin, isMainFrame, _ ->
+                if (!isMainFrame || sourceOrigin.scheme != "https" ||
+                    sourceOrigin.host != "pokeidle.io" || sourceOrigin.port != -1
+                ) return@addWebMessageListener
+                try {
+                    val raw = message.data ?: return@addWebMessageListener
+                    if (raw.length > 2_000_000) return@addWebMessageListener
+                    val payload = JSONObject(raw)
+                    payload.put("accountId", accountId)
+                    payload.put("updatedAt", System.currentTimeMillis())
+                    CaptureStore.save(context, accountId, payload)
+                } catch (_: Exception) {
+                    // Dados inválidos nunca podem interromper o jogo.
+                }
             }
-        }
 
-        WebViewCompat.addDocumentStartJavaScript(webView, SCRIPT, setOf(ORIGIN))
+            WebViewCompat.addDocumentStartJavaScript(webView, SCRIPT, setOf(ORIGIN))
+        } catch (e: Exception) {
+            // Falha do mecanismo de captura não pode impedir o jogo de abrir.
+            CaptureStore.save(context, accountId, JSONObject()
+                .put("accountId", accountId)
+                .put("status", "capture_error")
+                .put("error", e.javaClass.simpleName)
+                .put("updatedAt", System.currentTimeMillis()))
+        }
     }
 
     private val SCRIPT = """
@@ -84,7 +97,9 @@ object GameDataCapture {
     out.ficha = ficha;
     return out;
   };
-  const safePokemon = (p) => ({
+  const safePokemon = (p) => {
+    if (!p || typeof p !== 'object' || Array.isArray(p)) return null;
+    return {
     id: p.id, pokeId: p.pokeId, speciesId: p.speciesId, nome: p.nome,
     level: p.level, xp: p.xp, ivs: p.ivs, stats: p.stats,
     tipos: p.tipos ?? null, tmAoe: p.tmAoe ?? p.tm_aoe ?? null,
@@ -92,7 +107,8 @@ object GameDataCapture {
     shiny: !!p.shiny, potencia: p.potencia, nota: p.nota,
     quality: p.quality ?? null, iv: p.iv ?? null, slot: p.slot ?? null,
     poder: p.poder ?? null, refino: p.refino ?? null
-  });
+    };
+  };
   const readCoins = () => {
     const candidates = [state?.coins, state?.gold, state?.player?.coins, state?.player?.gold];
     for (const value of candidates) {
@@ -146,7 +162,8 @@ object GameDataCapture {
     if (!force && (kind === 'estado' || kind === 'batalha' || kind === 'field') &&
         now - diagnostics.lastPublishAt < 8000) return;
     diagnostics.lastPublishAt = now;
-    const pokemons = Array.isArray(state.pokemons) ? state.pokemons.map(safePokemon) : [];
+    const pokemons = Array.isArray(state.pokemons)
+      ? state.pokemons.map(safePokemon).filter(Boolean) : [];
     const team = pokemons.filter(p => p.slot != null)
       .sort((a, b) => (Number(a.slot) || 0) - (Number(b.slot) || 0));
     const active = pokemons.find(p => String(p.id) === String(state.activeId)) || null;
@@ -218,12 +235,20 @@ object GameDataCapture {
       return;
     }
     Object.assign(state, rest);
-    const map = new Map((state.pokemons || []).map(p => [p.id, p]));
+    const map = new Map((Array.isArray(state.pokemons) ? state.pokemons : [])
+      .filter(p => p && typeof p === 'object' && p.id != null)
+      .map(p => [p.id, p]));
     if (Array.isArray(pokemons)) {
       map.clear();
-      for (const p of pokemons) map.set(p.id, p);
+      for (const p of pokemons) {
+        if (p && typeof p === 'object' && p.id != null) map.set(p.id, p);
+      }
     }
-    for (const p of (pkMud || [])) map.set(p.id, { ...(map.get(p.id) || {}), ...p });
+    for (const p of (Array.isArray(pkMud) ? pkMud : [])) {
+      if (p && typeof p === 'object' && p.id != null) {
+        map.set(p.id, { ...(map.get(p.id) || {}), ...p });
+      }
+    }
     for (const id of (pkFora || [])) map.delete(id);
     state.pokemons = [...map.values()];
     if (dexMud || dexFora) {
