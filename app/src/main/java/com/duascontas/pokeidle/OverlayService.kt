@@ -198,6 +198,8 @@ open class OverlayService : Service() {
             }
         }
         web = null
+        hunterPanel = null
+        hunterResult = null
         frame = null
         try {
             wake?.let { if (it.isHeld) it.release() }
