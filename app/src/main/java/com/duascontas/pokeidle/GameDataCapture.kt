@@ -177,7 +177,16 @@ object GameDataCapture {
       },
       catalog: catalogData,
       measurements: metrics, market: marketData,
-      diagnostics: { ...diagnostics }
+      diagnostics: {
+        ...diagnostics,
+        huntsWithSpecies: hunts.filter(h => Array.isArray(h.especies) && h.especies.length > 0).length,
+        huntSpeciesEntries: hunts.reduce((n, h) => n + (Array.isArray(h.especies) ? h.especies.length : 0), 0),
+        typeChartEntries: Object.keys(catalogData?.combate?.tabelaTipos || {}).length,
+        pokemonWithStats: pokemons.filter(p => p.stats && typeof p.stats === 'object').length,
+        pokemonWithSpeciesId: pokemons.filter(p => p.speciesId != null).length,
+        activePokemonFound: !!active,
+        teamCount: team.length
+      }
     });
   };
   const merge = (partial) => {
