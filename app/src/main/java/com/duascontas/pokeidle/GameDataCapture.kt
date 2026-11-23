@@ -276,6 +276,211 @@ object GameDataCapture {
       ballUseWindowMinutes: ballUseTimes.length ? Math.round((Date.now() - ballUseTimes[0]) / 60000) : 0,
       sampleMinutes: minutes, killSamples: kills.length };
   };
+  let huntAnalysis = { status: 'aguardando', message: 'Aguardando dados e catálogo do jogo.' };
+  let analysisBusy = false;
+  let analysisScheduled = false;
+  let analysisCatalog = null;
+  let analysisModules = null;
+
+  const loadAnalysisDependencies = async () => {
+    if (analysisCatalog && analysisModules) return;
+    const base = location.origin + '/';
+    const getJson = async (path) => {
+      const response = await fetch(base + path, { credentials: 'same-origin' });
+      if (!response.ok) throw new Error(path + ' HTTP ' + response.status);
+      return response.json();
+    };
+    const [cr, newer, outland, overrides, analyser, reward, cooldown] = await Promise.all([
+      getJson('assets/creatures.json'),
+      getJson('assets/creatures-novos.json').catch(() => null),
+      getJson('assets/creatures-outland-novos.json').catch(() => null),
+      getJson('assets/creatures-audit-overrides.json').catch(() => null),
+      import(base + 'hunt-analyser.mjs'),
+      import(base + 'shared/recompensa-hunt.mjs'),
+      import(base + 'shared/cooldown-golpes.mjs')
+    ]);
+    const list = [
+      ...(Array.isArray(cr?.creatures) ? cr.creatures : []),
+      ...(Array.isArray(newer?.creatures) ? newer.creatures : []),
+      ...(Array.isArray(outland?.creatures) ? outland.creatures : [])
+    ];
+    const byId = new Map(list.filter(x => x && x.pokeId != null).map(x => [String(x.pokeId), x]));
+    for (const item of (overrides?.overrides || [])) {
+      const target = byId.get(String(item?.pokeId));
+      if (!target) continue;
+      for (const key of ['baseHp','baseAtk','baseDef','baseSpAtk','baseSpDef','baseSpeed']) {
+        if (Number.isFinite(Number(item[key]))) target[key] = Number(item[key]);
+      }
+      if (Array.isArray(item.attacks)) target.attacks = item.attacks;
+    }
+    if (!byId.size) throw new Error('Catálogo oficial sem espécies identificáveis.');
+    analysisCatalog = byId;
+    analysisModules = { analyser, reward, cooldown };
+  };
+
+  const typeEffect = (moveType, defender, table, analyser) => {
+    const d1 = defender?.[0] || null, d2 = defender?.[1] || null;
+    try {
+      if (typeof analyser.efetividade === 'function') {
+        const value = Number(analyser.efetividade(moveType, d1, d2, table || {}));
+        if (Number.isFinite(value)) return value;
+      }
+    } catch (_) {}
+    const read = (atk, def) => {
+      if (!def || !table) return 1;
+      const row = table[atk] || table[String(atk).toLowerCase()] || {};
+      const raw = row[def] ?? row[String(def).toLowerCase()];
+      return Number.isFinite(Number(raw)) ? Number(raw) : 1;
+    };
+    return read(moveType, d1) * (d2 && d2 !== d1 ? read(moveType, d2) : 1);
+  };
+
+  const estimatePokemonHunts = (pk, context) => {
+    const { analyser, reward, cooldown } = analysisModules;
+    const species = analysisCatalog.get(String(pk.speciesId ?? pk.pokeId));
+    if (!species || !pk.stats) return null;
+    const level = Math.max(1, Number(pk.level) || 1);
+    const ivSpeed = Math.min(32, Math.max(1, Number(pk.ivs?.speed) || 1));
+    const speedCd = (ms) => {
+      try {
+        return cooldown.cooldownGolpeComSpeed(ms, species.baseSpeed || 0, ivSpeed);
+      } catch (_) {
+        return Math.max(400, Number(ms) - ivSpeed * 10);
+      }
+    };
+    const pkTypes = Array.isArray(pk.tipos) && pk.tipos.length
+      ? pk.tipos : [species.type1, species.type2].filter(Boolean);
+    const attacks = (Array.isArray(species.attacks) ? species.attacks : [])
+      .filter(a => Number(a.learnLevel ?? 1) <= level && Number(a.power) > 0)
+      .map(a => ({ ...a, cd: speedCd(Number(a.cooldownMs) || 2000) }));
+    if (!attacks.length) attacks.push({ name: 'Investida (estimada)', type: pkTypes[0], power: 30, category: 'PHYSICAL', cd: speedCd(2000) });
+    const trainerLevel = Number(state?.level) || 1;
+    const unlocked = hunts.filter(h => Number(h.nivel) <= trainerLevel && Array.isArray(h.especies) && h.especies.length);
+    const typeTable = catalogData?.combate?.tabelaTipos || {};
+    const typeMult = (moveType, defender) => {
+      let value = typeEffect(moveType, defender, typeTable, analyser);
+      const amplify = Number(catalogData?.combate?.ampliacaoHunt) || 1.5;
+      if (value > 1) value = 1 + (value - 1) * amplify;
+      else if (value > 0 && value < 1) value /= amplify;
+      return value;
+    };
+    const now = Date.now();
+    let xpPokemonMult = 1, xpTrainerMult = 1, lootBonus = 0;
+    try { xpPokemonMult = Number(analyser.multXpPokemon?.(state, now, catalogData?.tiposBoost || [])) || 1; } catch (_) {}
+    try { xpTrainerMult = Number(analyser.multXpTreinador?.(state, now, catalogData?.tiposBoost || [])) || 1; } catch (_) {}
+    try { lootBonus = Number(analyser.bonusLootPct?.(state, now, catalogData?.tiposBoost || [])) || 0; } catch (_) {}
+    const rows = [];
+    for (const hunt of unlocked) {
+      const targets = hunt.especies.map(entry => ({
+        entry,
+        enemy: analysisCatalog.get(String(entry.pokeId))
+      })).filter(x => x.enemy && Number(x.entry.pontos) > 0);
+      const weightTotal = targets.reduce((sum, x) => sum + Number(x.entry.pontos), 0);
+      if (!weightTotal) continue;
+      let ttk = 0, xpPerKill = 0, goldPerKill = 0;
+      for (const target of targets) {
+        const enemy = target.enemy;
+        const weight = Number(target.entry.pontos) / weightTotal;
+        const enemyTypes = [enemy.type1, enemy.type2].filter(Boolean);
+        const enemyLevel = Math.max(1, Number(hunt.nivel) || 1);
+        const enemyDef = ((Number(enemy.baseDef) || 0) + 32) * enemyLevel / 100;
+        const enemySpDef = ((Number(enemy.baseSpDef) || 0) + 32) * enemyLevel / 100;
+        const enemyHp = Math.max(24, Math.round(((Number(enemy.baseHp) || 0) + 32) * enemyLevel / 100 * 12)) *
+          (Number(catalogData?.combate?.multHpSelvagem) || 5);
+        let bestDps = 0;
+        for (const move of attacks) {
+          const special = String(move.category).toUpperCase() === 'SPECIAL';
+          const attackStat = Number(special ? pk.stats.spAtk : pk.stats.atk) || 1;
+          const defenseStat = special ? enemySpDef : enemyDef;
+          const effectiveness = typeMult(move.type, enemyTypes);
+          const stab = pkTypes.includes(move.type) ? 1.5 : 1;
+          const base = (((2 * level / 5 + 2) * Math.max(15, Number(move.power) || 15) *
+            Math.max(1, attackStat) / Math.max(1, defenseStat)) / 50) + 2;
+          const damage = base * stab * effectiveness * 0.925;
+          const cooldownSeconds = Math.max(0.4, Number(move.cd) / 1000, 0.9 - ivSpeed * 0.01);
+          bestDps = Math.max(bestDps, damage / cooldownSeconds);
+        }
+        if (bestDps <= 0) continue;
+        ttk += weight * enemyHp / bestDps;
+        try {
+          xpPerKill += weight * Number(reward.xpPorDerrota(hunt, enemyLevel, enemy));
+        } catch (_) {}
+        try {
+          goldPerKill += weight * Number(reward.ouroPorDerrotaHunt(hunt, enemyLevel, enemy, lootBonus));
+        } catch (_) {}
+      }
+      if (!Number.isFinite(ttk) || ttk <= 0) continue;
+      const targetCount = Math.max(1, Math.min(16, Math.round(weightTotal)));
+      const travelSeconds = 20.6 * 0.26 * 0.31;
+      const killsSingle = Math.min(3600 / (ttk + 1.8), targetCount * 3600 / (travelSeconds + 2.8));
+      const aoePossible = pk.tmAoe === true || pk.tmAoe === 1 || pk.tmAoe === 'true';
+      // AoE hipotético usa densidade provisória; não é medição do campo desta Hunt.
+      const aoeTargets = 2.2;
+      const killsAoe = Math.min(killsSingle * aoeTargets, 16 * 3600 / (Math.max(0.8, travelSeconds * 0.55) + 2.8));
+      const xpP = killsSingle * xpPerKill * xpPokemonMult;
+      const xpT = killsSingle * xpPerKill * xpTrainerMult;
+      const gold = killsSingle * goldPerKill;
+      rows.push({
+        slug: hunt.slug, nome: hunt.nome, nivel: Number(hunt.nivel) || 0,
+        regiao: hunt.regiao || hunt.area || '',
+        ttkEstimado: Math.round(ttk * 10) / 10,
+        xpPokemonH: Math.round(xpP), xpTreinadorH: Math.round(xpT), goldH: Math.round(gold),
+        abatesH: Math.round(killsSingle),
+        xpPokemonHAoeHipotetico: Math.round(killsAoe * xpPerKill * xpPokemonMult),
+        goldHAoeHipotetico: Math.round(killsAoe * goldPerKill),
+        possuiAoe: aoePossible,
+        confianca: 'baixa: sem geometria de campo e ritmo medido',
+        observacaoAoe: 'cenário hipotético com 2,2 alvos por golpe; não é resultado medido'
+      });
+    }
+    rows.sort((a,b) => b.xpPokemonH - a.xpPokemonH);
+    return {
+      pokemonId: pk.id, nome: pk.nome || species.name || ('Pokémon ' + pk.speciesId),
+      level, tmAoe: !!(pk.tmAoe === true || pk.tmAoe === 1 || pk.tmAoe === 'true'),
+      melhorXp: rows[0] || null,
+      melhorGold: rows.slice().sort((a,b) => b.goldH - a.goldH)[0] || null,
+      topHunts: rows.slice(0, 5),
+      huntsAnalisadas: rows.length
+    };
+  };
+
+  const refreshHuntAnalysis = async () => {
+    if (analysisBusy) return;
+    analysisBusy = true;
+    try {
+      if (!state || !Array.isArray(state.pokemons) || !hunts.length || !catalogData) {
+        huntAnalysis = { status: 'aguardando', message: 'Aguardando Pokémon, Hunts e catálogo.' };
+        return;
+      }
+      await loadAnalysisDependencies();
+      const candidates = state.pokemons.filter(p => p && p.id != null && p.speciesId != null && p.stats);
+      const results = candidates.slice(0, 12).map(pk => estimatePokemonHunts(pk, catalogData)).filter(Boolean);
+      huntAnalysis = {
+        status: results.length ? 'estimativa_disponivel' : 'sem_dados',
+        calculadoEm: Date.now(),
+        nivelTreinador: Number(state.level) || 0,
+        pokemonAnalisados: results.length,
+        fonteCatalogo: 'assets públicos oficiais carregados do pokeidle.io',
+        modelo: 'estimativa teórica preliminar; sem geometria real da Hunt',
+        pokemon: results
+      };
+    } catch (error) {
+      huntAnalysis = { status: 'erro', message: String(error?.message || error).slice(0, 180) };
+    } finally {
+      analysisBusy = false;
+      publish('analysis', true);
+    }
+  };
+
+  const scheduleHuntAnalysis = () => {
+    if (analysisScheduled) return;
+    analysisScheduled = true;
+    setTimeout(() => {
+      analysisScheduled = false;
+      refreshHuntAnalysis();
+    }, 1800);
+  };
+
   const publish = (kind, force = false) => {
     if (!state) return;
     const now = Date.now();
@@ -337,6 +542,7 @@ object GameDataCapture {
       },
       catalog: catalogData,
       gameSession: readGameSession(),
+      huntAnalysis,
       measurements: metrics, market: marketData, fieldData,
       diagnostics: {
         ...diagnostics,
@@ -454,6 +660,7 @@ object GameDataCapture {
               merge(msg.estado && typeof msg.estado === 'object' && !Array.isArray(msg.estado) ? msg.estado : {});
               previousBallCounts = readBallCounts();
               publish('welcome', true);
+              scheduleHuntAnalysis();
             } else if (msg.t === 'estado' && state) {
               diagnostics.estado++;
               merge(msg.estado && typeof msg.estado === 'object' && !Array.isArray(msg.estado) ? msg.estado : null);
@@ -470,6 +677,7 @@ object GameDataCapture {
                 });
               }
               publish('estado');
+              scheduleHuntAnalysis();
             } else if (msg.t === 'batalha' && Array.isArray(msg.ev)) {
               diagnostics.batalha++;
               for (const ev of msg.ev) {
