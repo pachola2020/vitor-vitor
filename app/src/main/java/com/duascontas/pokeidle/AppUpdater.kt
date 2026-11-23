@@ -24,7 +24,7 @@ import java.util.concurrent.Executors
  * Confere o SHA-256 publicado pelo GitHub antes de abrir o instalador Android.
  */
 object AppUpdater {
-    private const val API = "https://api.github.com/repos/pacholapachola2020/vitor-vitor/releases?per_page=20"
+    private const val API = "https://api.github.com/repos/pachola2020/vitor-vitor/releases?per_page=20"
     private const val APK_NAME = "PokeIdle-Assistant.apk"
     private const val PREFS = "assistant_updater"
     private const val KEY_DOWNLOAD = "download_id"
