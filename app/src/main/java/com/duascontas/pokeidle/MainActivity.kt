@@ -210,15 +210,21 @@ class MainActivity : Activity() {
         val market = data.optJSONObject("market")
         val marketCount = market?.optJSONArray("linhas")?.length() ?: 0
         val marketText = if (marketCount > 0) " · Mercado: $marketCount registros lidos (${market?.optString("aba")})" else ""
+        val diag = data.optJSONObject("diagnostics")
+        val frames = diag?.optInt("jsonFrames", 0) ?: 0
+        val welcomeCount = diag?.optInt("welcome", 0) ?: 0
+        val estadoCount = diag?.optInt("estado", 0) ?: 0
+        val lastType = diag?.optString("lastType")?.takeIf { !it.isNullOrBlank() } ?: "nenhum"
+        val diagnosticText = " · Protocolo: $frames mensagens JSON, welcome $welcomeCount, estado $estadoCount, última: $lastType"
         return if (player != null && hunts > 0) {
             "DADOS RECEBIDOS · ${accountNames[selectedAccount - 1].uppercase()}" to
-                "$hunts Hunts recebidas · Treinador Nv. $level · Hunt: $hunt · Pokémon ativo: $pokemon$marketText · $freshness. XP/h e abates/h são observados durante a sessão; análise comparativa ainda será integrada."
+                "$hunts Hunts recebidas · Treinador Nv. $level · Hunt: $hunt · Pokémon ativo: $pokemon$marketText$diagnosticText · $freshness. Captura observacional; ranking comparativo ainda não está integrado."
         } else if (status == "connected") {
             "WEBSOCKET CONECTADO · AGUARDANDO QUADRO INICIAL" to
-                "A conexão do jogo abriu, mas o servidor ainda não enviou o quadro inicial com Hunts e equipe."
+                "A conexão abriu, mas ainda não chegou o quadro inicial. $diagnosticText · $freshness."
         } else {
             "LEITOR INSTALADO · AGUARDANDO WEBSOCKET" to
-                "O leitor foi instalado nesta conta, mas ainda não recebeu o quadro inicial do jogo. $freshness."
+                "O leitor foi instalado, mas ainda não recebeu o quadro inicial. $diagnosticText · $freshness."
         }
     }
 
