@@ -676,17 +676,16 @@ open class OverlayService : Service() {
     private fun showHunterSection(section: String) {
         val output = hunterResult ?: return
         if (section == "hunt") {
+            output.text = "⏳  ANALISANDO HUNTS\n\nO resultado aparecerá aqui automaticamente. Você não precisa trocar de aba."
             web?.evaluateJavascript(
                 "window.__pokeIdleRunHuntAnalysis && window.__pokeIdleRunHuntAnalysis()"
             ) { result ->
-                output.text = if (result == "true") {
-                    "Hunt Analyzer iniciado sob demanda. O cálculo pode levar alguns instantes. Use “Ver resultado da Hunt” para consultar quando terminar."
+                if (result == "true") {
+                    pollHuntResult(0)
                 } else {
-                    "Não foi possível iniciar: a conta ainda não entregou Pokémon, Hunts e catálogo suficientes. Mantenha o jogo aberto e tente novamente."
+                    output.text = "⚠️  Não foi possível iniciar. Abra o jogo e aguarde Pokémon, Hunts e catálogo serem carregados."
                 }
-            } ?: run {
-                output.text = "A janela do jogo não está disponível para iniciar a análise."
-            }
+            } ?: run { output.text = "Janela do jogo indisponível." }
             return
         }
         output.text = "Consultando os dados capturados…"
@@ -762,6 +761,44 @@ open class OverlayService : Service() {
         }
     }
 
+    private fun pollHuntResult(attempt: Int) {
+        if (attempt >= 40 || hunterPanel?.visibility != View.VISIBLE) return
+        hunterQueryExecutor.execute {
+            val data = CaptureStore.read(this, accountId)
+            handler.post {
+                val output = hunterResult ?: return@post
+                if (hunterPanel?.visibility != View.VISIBLE) return@post
+                val analysis = data?.optJSONObject("huntAnalysis")
+                val status = analysis?.optString("status")
+                if (analysis != null && status == "estimativa_disponivel") {
+                    val pokemon = analysis.optJSONArray("pokemon")
+                    val text = StringBuilder()
+                    text.append("🏆  RESULTADO DA HUNT ANALYZER\n")
+                    text.append(analysis.optInt("pokemonAnalisados", 0)).append(" Pokémon analisados\n")
+                    text.append("Estimativas teóricas · não são medições reais\n\n")
+                    if (pokemon != null) {
+                        for (i in 0 until minOf(3, pokemon.length())) {
+                            val p = pokemon.optJSONObject(i) ?: continue
+                            text.append("━━━━━━━━━━━━━━━━\n")
+                            text.append("🔹 ").append(p.optString("nome", "Pokémon"))
+                                .append(" Nv.").append(p.optInt("level", 0)).append("\n")
+                            val noAoe = p.optJSONObject("melhorXpSemAoe")
+                            val aoe = p.optJSONObject("melhorXpComAoe")
+                            if (noAoe != null) text.append("XP sem AoE: ").append("%,d".format(noAoe.optLong("xpPokemonH"))).append("/h · ").append(noAoe.optString("nome")).append("\n")
+                            if (aoe != null) text.append("XP com AoE: ").append("%,d".format(aoe.optLong("xpPokemonHAoeHipotetico"))).append("/h · ").append(aoe.optString("nome")).append(" (hipótese)\n")
+                        }
+                    }
+                    text.append("\nToque em “Ver resultado” para atualizar esta consulta.")
+                    output.text = text.toString()
+                } else if (status == "erro") {
+                    output.text = "⚠️  A análise falhou\n\n" + analysis.optString("message", "Erro sem detalhes")
+                } else {
+                    output.text = "⏳  ANALISANDO HUNTS\n\nComparando Pokémon e Hunts liberadas…\n\nVocê não precisa trocar de aba."
+                    handler.postDelayed({ pollHuntResult(attempt + 1) }, 1500)
+                }
+            }
+        }
+    }
     private fun smallButton(label: String): TextView {
         val t = TextView(this)
         t.text = label
