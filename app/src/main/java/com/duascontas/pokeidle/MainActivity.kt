@@ -268,6 +268,16 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun nullableLong(obj: org.json.JSONObject?, key: String): Long? {
+        val raw = obj?.opt(key) ?: return null
+        if (raw == org.json.JSONObject.NULL) return null
+        return when (raw) {
+            is Number -> raw.toLong()
+            is String -> raw.toLongOrNull()
+            else -> null
+        }
+    }
+
     private fun metricCard(title: String): View = column().apply {
         val display = metricDisplay(title)
         setPadding(dp(12), dp(10), dp(12), dp(10))
@@ -283,12 +293,13 @@ class MainActivity : Activity() {
         val minutes = m?.optInt("sampleMinutes", 0) ?: 0
         val player = data?.optJSONObject("player")
         val value = when (title) {
-            "XP DO POKÉMON / H" -> m?.optLong("xpPokemonH", -1L) ?: -1L
-            "XP DO TREINADOR / H" -> m?.optLong("xpTrainerH", -1L) ?: -1L
-            "COINS ATUAIS" -> data?.optLong("coinsBalance", player?.optLong("coins", player?.optLong("gold", -1L) ?: -1L) ?: -1L) ?: -1L
-            "COINS LÍQUIDOS / H" -> m?.let { if (it.has("coinsNetH")) it.optLong("coinsNetH") else Long.MIN_VALUE } ?: Long.MIN_VALUE
-            "ABATES / H" -> m?.optLong("killsH", -1L) ?: -1L
-            "SOBREVIVÊNCIA" -> (m?.optInt("survivalPct", -1) ?: -1).toLong()
+            "XP DO POKÉMON / H" -> nullableLong(m, "xpPokemonH") ?: -1L
+            "XP DO TREINADOR / H" -> nullableLong(m, "xpTrainerH") ?: -1L
+            "COINS ATUAIS" -> nullableLong(data, "coinsBalance")
+                ?: nullableLong(player, "coins") ?: nullableLong(player, "gold") ?: -1L
+            "COINS LÍQUIDOS / H" -> nullableLong(m, "coinsNetH") ?: Long.MIN_VALUE
+            "ABATES / H" -> nullableLong(m, "killsH") ?: -1L
+            "SOBREVIVÊNCIA" -> (nullableLong(m, "survivalPct") ?: -1L)
             else -> -1L
         }
         if (title == "") return "—" to ""
