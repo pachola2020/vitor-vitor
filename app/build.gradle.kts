@@ -17,7 +17,7 @@ android {
         minSdk = 28
         targetSdk = 34
         versionCode = 36
-        versionName = "0.5.31-shiny-light-candidate"
+        versionName = "0.5.31-shiny-light-candidate" // Shiny UI and diagnostics size guard
     }
 
     signingConfigs {
