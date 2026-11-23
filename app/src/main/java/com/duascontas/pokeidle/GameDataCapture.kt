@@ -84,6 +84,40 @@ object GameDataCapture {
   let marketData = null;
   let fieldData = null;
   let catalogData = null;
+  // Estatísticas oficiais da sessão que o próprio jogo mantém no armazenamento local.
+  // Só são lidos contadores de jogo; nunca cookies, tokens ou credenciais.
+  const readGameSession = () => {
+    const nick = String(state?.nick ?? '').trim();
+    if (!nick) return null;
+    try {
+      const raw = localStorage.getItem('sessao-hunt:' + nick.toLowerCase());
+      if (!raw) return null;
+      const source = JSON.parse(raw);
+      if (!source || typeof source !== 'object' || Array.isArray(source)) return null;
+      const out = {};
+      for (const key of ['ms','xpTreinador','xpPokemon','gold','abates','capturas',
+        'shiniesVistos','shinies','bossTokens','fragChave','fragShiny',
+        'fragBicicleta','fragMega','fragMegaShiny','tmPeca','tmPecaAoe',
+        'ticketMistico','ticketSafari','fragOvoShiny']) {
+        const n = Number(source[key]);
+        if (Number.isFinite(n) && n >= 0) out[key] = n;
+      }
+      for (const key of ['bolas','pocoes']) {
+        const map = source[key];
+        const safe = {};
+        if (map && typeof map === 'object' && !Array.isArray(map)) {
+          for (const [id, value] of Object.entries(map).slice(0, 80)) {
+            const n = Number(value);
+            if (Number.isFinite(n) && n >= 0) safe[id] = n;
+          }
+        }
+        out[key] = safe;
+      }
+      return out;
+    } catch (_) {
+      return null;
+    }
+  };
   // Consumo de bolas observado pela redução do inventário durante uma hunt normal.
   // É um proxy de lançamentos; não é apresentado como evento individual confirmado.
   let previousBallCounts = null;
@@ -302,6 +336,7 @@ object GameDataCapture {
         activePokemon: active, pokemonCount: pokemons.length, pokemons
       },
       catalog: catalogData,
+      gameSession: readGameSession(),
       measurements: metrics, market: marketData, fieldData,
       diagnostics: {
         ...diagnostics,
@@ -448,6 +483,8 @@ object GameDataCapture {
                 if (ev && ev.k === 'capturado' && ev.pokemon && ev.pokemon.shiny) shinyCaptureTimes.push(Date.now());
               }
               publish('batalha');
+              // O jogo grava os contadores da sessão com pequeno atraso após o evento.
+              setTimeout(() => publish('session', true), 2500);
             } else if (msg.t === 'market') {
               diagnostics.market++;
               diagnostics.marketMessageKeys = Object.keys(msg).slice(0, 30);
