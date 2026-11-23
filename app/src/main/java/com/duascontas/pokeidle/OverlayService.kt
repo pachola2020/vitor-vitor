@@ -209,10 +209,6 @@ open class OverlayService : Service() {
             receiverRegistered = false
         }
         try {
-            CookieManager.getInstance().flush()
-        } catch (e: Exception) {
-        }
-        try {
             frame?.let { wm?.removeView(it) }
         } catch (e: Exception) {
         }

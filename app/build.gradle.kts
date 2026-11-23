@@ -16,8 +16,8 @@ android {
         applicationId = "com.duascontas.pokeidle.assistant.v2"
         minSdk = 28
         targetSdk = 34
-        versionCode = 39
-        versionName = "0.5.34-background-cookie-candidate" // Move blocking cookie persistence off the UI thread
+        versionCode = 40
+        versionName = "0.5.35-background-cookie-candidate" // All explicit cookie flushes run off the UI thread
     }
 
     signingConfigs {
