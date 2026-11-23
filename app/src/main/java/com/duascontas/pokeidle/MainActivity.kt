@@ -61,6 +61,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        AppUpdater.resumePendingInstall(this)
         if (::permissionStatus.isInitialized) {
             renderDashboard()
         }
@@ -75,7 +76,7 @@ class MainActivity : Activity() {
         brand.addView(label("Assistant", 28f, TEXT, true))
         brand.addView(label("Painel pessoal de acompanhamento", 13f, MUTED))
         top.addView(brand, LinearLayout.LayoutParams(0, -2, 1f))
-        val version = label("TESTE\n0.3.0", 11f, MUTED, true).apply {
+        val version = label("TESTE\n0.4.0", 11f, MUTED, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(10), dp(8), dp(10), dp(8))
             setBackgroundColor(PANEL_ALT)
