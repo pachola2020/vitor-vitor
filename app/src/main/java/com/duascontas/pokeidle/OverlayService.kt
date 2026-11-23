@@ -586,7 +586,8 @@ open class OverlayService : Service() {
             "Oportunidades" to "opportunities",
             "Bônus de XP" to "xp",
             "Shiny" to "shiny",
-            "Calcular Hunt" to "hunt"
+            "Ver resultado da Hunt" to "hunt_result",
+            "Calcular Hunt agora" to "hunt"
         )
         actions.forEach { (label, key) ->
             val button = TextView(this).apply {
@@ -619,39 +620,65 @@ open class OverlayService : Service() {
 
     private fun showHunterSection(section: String) {
         val output = hunterResult ?: return
-        val data = CaptureStore.read(this, accountId)
         if (section == "hunt") {
             web?.evaluateJavascript(
-                "window.__pokeIdleRunHuntAnalysis && window.__pokeIdleRunHuntAnalysis()",
-                null
-            )
-            output.text = "Hunt Analyzer solicitado para esta conta. O cálculo ocorre agora, sob demanda. Feche o painel para voltar ao jogo; reabra para consultar os dados capturados."
+                "window.__pokeIdleRunHuntAnalysis && window.__pokeIdleRunHuntAnalysis()"
+            ) { result ->
+                output.text = if (result == "true") {
+                    "Hunt Analyzer iniciado sob demanda. O cálculo pode levar alguns instantes. Use “Ver resultado da Hunt” para consultar quando terminar."
+                } else {
+                    "Não foi possível iniciar: a conta ainda não entregou Pokémon, Hunts e catálogo suficientes. Mantenha o jogo aberto e tente novamente."
+                }
+            } ?: run {
+                output.text = "A janela do jogo não está disponível para iniciar a análise."
+            }
             return
         }
-        if (data == null) {
-            output.text = "Ainda não há dados capturados desta conta. Abra o jogo e aguarde a conexão."
-            return
-        }
-        val player = data.optJSONObject("player")
-        val xp = data.optJSONObject("euXp")
-        val session = data.optJSONObject("gameSession")
-        output.text = when (section) {
-            "opportunities" -> {
-                val event = xp?.opt("evento")
-                val hunts = data.optJSONArray("hunts")?.length() ?: 0
-                "OPORTUNIDADES\\nTreinador Nv. ${player?.optInt("level", 0) ?: 0}\\nHunts recebidas: $hunts\\nEvento informado pelo jogo: ${event?.toString() ?: "nenhum dado disponível"}\\nA detecção de encontros raros ao vivo ainda precisa de uma fonte de evento validada."
+        output.text = "Consultando os dados capturados…"
+        Thread {
+            val data = CaptureStore.read(this, accountId)
+            handler.post {
+                if (hunterResult !== output || hunterPanel?.visibility != View.VISIBLE) return@post
+                if (data == null) {
+                    output.text = "Ainda não há dados capturados desta conta. Abra o jogo e aguarde a conexão."
+                    return@post
+                }
+                val player = data.optJSONObject("player")
+                val xp = data.optJSONObject("euXp")
+                val session = data.optJSONObject("gameSession")
+                output.text = when (section) {
+                    "overview" -> {
+                        val analysis = data.optJSONObject("huntAnalysis")
+                        val analysisStatus = analysis?.optString("status") ?: "ainda não executada"
+                        "CONTA $accountId · TREINADOR NV. ${player?.optInt("level", 0) ?: 0}\\nHunt atual: ${player?.optString("huntSlug", "não identificada")}\\nHunter trabalha somente quando você toca em uma consulta.\\nHunt Analyzer: $analysisStatus"
+                    }
+                    "opportunities" -> {
+                        val event = xp?.opt("evento")
+                        val hunts = data.optJSONArray("hunts")?.length() ?: 0
+                        "OPORTUNIDADES\\nTreinador Nv. ${player?.optInt("level", 0) ?: 0}\\nHunts recebidas: $hunts\\nEvento informado pelo jogo: ${event?.toString() ?: "nenhum dado disponível"}\\nA detecção de encontros raros ao vivo ainda precisa de uma fonte de evento validada."
+                    }
+                    "xp" -> {
+                        val loja = xp?.optJSONObject("loja")
+                        val guild = xp?.optJSONObject("guild")
+                        "BÔNUS DE XP\\nBônus de guilda: ${xp?.optDouble("guildBonusPct", 0.0) ?: 0.0}%\\nVIP/loja: ${loja?.toString() ?: "sem dados"}\\nGuilda: ${guild?.toString() ?: "sem dados"}\\nTwitch: ${xp?.optJSONObject("twitch")?.toString() ?: "sem dados"}\\nKick: ${xp?.optJSONObject("kick")?.toString() ?: "sem dados"}"
+                    }
+                    "shiny" -> {
+                        val shinyCount = session?.optInt("shinies", -1) ?: -1
+                        "SHINY\\nShinies registrados na sessão: ${if (shinyCount >= 0) shinyCount else "sem contador disponível"}\\nO leitor registra eventos de captura shiny observados; encontros raros não confirmados não serão inventados."
+                    }
+                    "hunt_result" -> {
+                        val analysis = data.optJSONObject("huntAnalysis")
+                        if (analysis == null) {
+                            "Ainda não existe resultado. Toque em “Calcular Hunt agora” para iniciar a análise."
+                        } else {
+                            val pokemon = analysis.optJSONArray("pokemon")
+                            "HUNT ANALYZER · ${analysis.optString("status", "sem status")}\\nPokémon analisados: ${analysis.optInt("pokemonAnalisados", 0)}\\nResultados disponíveis: ${pokemon?.length() ?: 0}\\nToque em Calcular Hunt agora para atualizar a análise."
+                        }
+                    }
+                    else -> "Consulta indisponível."
+                }
             }
-            "xp" -> {
-                val loja = xp?.optJSONObject("loja")
-                val guild = xp?.optJSONObject("guild")
-                "BÔNUS DE XP\\nBônus de guilda: ${xp?.optDouble("guildBonusPct", 0.0) ?: 0.0}%\\nVIP/loja: ${loja?.toString() ?: "sem dados"}\\nGuilda: ${guild?.toString() ?: "sem dados"}\\nTwitch: ${xp?.optJSONObject("twitch")?.toString() ?: "sem dados"}\\nKick: ${xp?.optJSONObject("kick")?.toString() ?: "sem dados"}"
-            }
-            "shiny" -> {
-                val shinyCount = session?.optInt("shinies", -1) ?: -1
-                "SHINY\\nShinies registrados na sessão: ${if (shinyCount >= 0) shinyCount else "sem contador disponível"}\\nO leitor registra eventos de captura shiny observados; encontros raros não confirmados não serão inventados."
-            }
-            else -> "Consulta indisponível."
-        }
+        }.start()
     }
 
     private fun smallButton(label: String): TextView {
