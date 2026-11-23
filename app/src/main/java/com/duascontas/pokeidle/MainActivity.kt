@@ -146,6 +146,7 @@ class MainActivity : Activity() {
         addAnalysisOption("PROGRESSÃO", "XP, Gold, abates, sobrevivência e variação do saldo", ::showProgressionDetails)
         addAnalysisOption("HUNTS", "Hunts liberadas, níveis e Hunt atual da conta", ::showHuntDetails)
         addAnalysisOption("HUNT ANALYZER", "Ranking preliminar por Pokémon: XP/h, Gold/h, abates/h e cenário AoE", ::showHuntAnalyzerDetails)
+        root.addView(actionButton("Calcular Hunt Analyzer agora", true) { requestHuntAnalysis() })
         addAnalysisOption("POKÉMON", "Equipe, Pokémon ativo, nível, IVs e atributos recebidos", ::showPokemonDetails)
         addAnalysisOption("SHINY HUNT", "Bolas usadas, Shinies vistos e Shinies registrados na sessão", ::showShinyDetails)
         addAnalysisOption("MERCADO", "Registros capturados da aba aberta no Mercado", ::showMarketDetails)
@@ -346,6 +347,18 @@ class MainActivity : Activity() {
             append("Esta tela lista os dados recebidos; o ranking comparativo e a simulação com/sem AoE ainda não estão conectados.")
         }
         showDialog("Hunts", lines)
+    }
+
+    private fun requestHuntAnalysis() {
+        val intent = Intent(OverlayService.ACTION_RUN_HUNT_ANALYSIS)
+            .setPackage(packageName)
+            .putExtra("accountId", selectedAccount)
+        sendBroadcast(intent)
+        Toast.makeText(
+            this,
+            "Solicitação enviada. Mantenha a janela da conta selecionada aberta e consulte o resultado em Hunt Analyzer.",
+            Toast.LENGTH_LONG
+        ).show()
     }
 
     private fun showHuntAnalyzerDetails() {
