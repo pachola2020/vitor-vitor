@@ -640,6 +640,18 @@ class MainActivity : Activity() {
             .show()
     }
 
+    private fun withLatestSnapshot(action: (org.json.JSONObject?) -> Unit) {
+        val account = selectedAccount
+        dashboardIo.execute {
+            val snapshot = CaptureStore.read(this, account)
+            mainHandler.post {
+                if (isFinishing || selectedAccount != account) return@post
+                dashboardData = snapshot
+                action(snapshot)
+            }
+        }
+    }
+
     private fun showAccountComparison() {
         Toast.makeText(this, "Lendo métricas das três contas…", Toast.LENGTH_SHORT).show()
         dashboardIo.execute {
@@ -691,7 +703,10 @@ class MainActivity : Activity() {
     }
 
     private fun showProgressionDetails() {
-        val data = dashboardData
+        withLatestSnapshot { data -> renderProgressionDetails(data) }
+    }
+
+    private fun renderProgressionDetails(data: org.json.JSONObject?) {
         val session = data?.optJSONObject("gameSession")
         val m = data?.optJSONObject("measurements")
         val player = data?.optJSONObject("player")
@@ -711,7 +726,10 @@ class MainActivity : Activity() {
     }
 
     private fun showHuntDetails() {
-        val data = dashboardData
+        withLatestSnapshot { data -> renderHuntDetails(data) }
+    }
+
+    private fun renderHuntDetails(data: org.json.JSONObject?) {
         val hunts = data?.optJSONArray("hunts")
         val level = data?.optJSONObject("player")?.optInt("level", 0) ?: 0
         if (hunts == null || hunts.length() == 0) {
@@ -986,7 +1004,11 @@ class MainActivity : Activity() {
     }
 
     private fun showInventoryDetails() {
-        val session = dashboardData?.optJSONObject("gameSession")
+        withLatestSnapshot { data -> renderInventoryDetails(data) }
+    }
+
+    private fun renderInventoryDetails(data: org.json.JSONObject?) {
+        val session = data?.optJSONObject("gameSession")
         if (session == null) {
             showDialog("Recursos", "Os contadores da sessão ainda não foram recebidos. Abra a conta no jogo e aguarde a sincronização.")
             return
@@ -1022,7 +1044,10 @@ class MainActivity : Activity() {
     }
 
     private fun showPokemonDetails() {
-        val data = dashboardData
+        withLatestSnapshot { data -> renderPokemonDetails(data) }
+    }
+
+    private fun renderPokemonDetails(data: org.json.JSONObject?) {
         val player = data?.optJSONObject("player")
         val pokemons = player?.optJSONArray("pokemons")
         if (pokemons == null || pokemons.length() == 0) {
@@ -1048,7 +1073,10 @@ class MainActivity : Activity() {
     }
 
     private fun showShinyDetails() {
-        val data = dashboardData
+        withLatestSnapshot { data -> renderShinyDetails(data) }
+    }
+
+    private fun renderShinyDetails(data: org.json.JSONObject?) {
         if (data == null) {
             showDialog("Shiny Hunt", "Ainda não há snapshot desta conta. Abra o jogo e aguarde a conexão antes de consultar.")
             return
@@ -1101,7 +1129,10 @@ class MainActivity : Activity() {
     }
 
     private fun showMarketDetails() {
-        val data = dashboardData
+        withLatestSnapshot { data -> renderMarketDetails(data) }
+    }
+
+    private fun renderMarketDetails(data: org.json.JSONObject?) {
         val market = data?.optJSONObject("market")
         val linesArray = market?.optJSONArray("linhas")
         if (market == null || linesArray == null || linesArray.length() == 0) {
