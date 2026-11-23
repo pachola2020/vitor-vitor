@@ -341,7 +341,7 @@ class MainActivity : Activity() {
                 dashboardData = snapshot
                 renderDashboard(loadSnapshot = false)
                 val ageMs = System.currentTimeMillis() - (snapshot?.optLong("updatedAt", 0L) ?: 0L)
-                if (snapshot == null || ageMs !in 0..60000L) {
+                if (snapshot == null || ageMs < 0L || ageMs > 60000L) {
                     showDialog("Prey Analyzer", "Os dados desta conta estão ausentes ou desatualizados. Mantenha o jogo aberto, toque em Atualizar dados e tente novamente.")
                     return@post
                 }
@@ -371,9 +371,10 @@ class MainActivity : Activity() {
                     }
                     val telemetry = snapshot.optJSONObject("preyTelemetry")
                     val detected = telemetry?.optJSONObject("eventCounts")?.length() ?: 0
-                    val note = if (detected > 0) "Sinais de evento com termos relacionados detectados: " + detected +
-                        ". Isso é telemetria exploratória, não confirmação da mecânica." else
-                        "Nenhum evento com nome/campo explícito de Prey foi identificado até agora."
+                    val stateKeys = telemetry?.optJSONArray("stateKeys")?.length() ?: 0
+                    val note = if (detected > 0 || stateKeys > 0) "Sinais candidatos: " + detected +
+                        " tipos de evento e " + stateKeys + " campos de estado. São pistas de protocolo, não confirmação da mecânica." else
+                        "Nenhum campo/evento explícito de Prey foi identificado até agora; o teste A/B ainda mede os resultados da sessão."
                     val message = "Não encontrei documentação pública oficial que descreva uma mecânica chamada Prey com fórmula verificável. Por isso, o módulo começa como experimento A/B: você marca ON ou OFF no jogo e o app mede os contadores reais entre as duas marcações.\n\n" +
                         note + "\n\n" + preyHistorySummary(account) +
                         "\n\nMantenha a mesma Hunt, Pokémon, nível e bônus durante cada amostra."
@@ -422,6 +423,8 @@ class MainActivity : Activity() {
         val bonusSignature = org.json.JSONObject()
             .put("guildBonusPct", xp?.optDouble("guildBonusPct", 0.0) ?: 0.0)
             .put("vipUntil", shop?.optLong("vipAte", 0L) ?: 0L)
+            .put("activeBoosts", shop?.opt("boosts")?.toString() ?: "")
+            .put("guildBoostUntil", xp?.optJSONObject("guild")?.optLong("boostAte", 0L) ?: 0L)
             .put("twitchActive", twitch?.optBoolean("assistindo", false) ?: false)
             .put("twitchPct", twitch?.optDouble("pctAtual", 0.0) ?: 0.0)
             .put("kickPct", kick?.optDouble("pct", 0.0) ?: 0.0)
