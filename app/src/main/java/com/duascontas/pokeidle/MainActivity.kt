@@ -813,6 +813,7 @@ class MainActivity : Activity() {
             else -> currency.ifBlank { "moeda não identificada" }
         }
         val tab = market.optString("aba", "")
+        val totalRecords = market.optInt("total", 0)
         val isSalesHistory = tab == "historicoGlobal"
         val isActiveListings = tab == "vitrine" || tab == "meus"
         data class SaleSample(val price: Long, val currency: String, val isPokemon: Boolean, val name: String, val speciesKey: String)
@@ -833,8 +834,13 @@ class MainActivity : Activity() {
         val lines = buildString {
             appendLine("ORIGEM DOS DADOS")
             appendLine("Aba: ${tab.ifBlank { "não identificada" }} · Capturado em: ${market.optLong("atualizadoEm", 0L).takeIf { it > 0L }?.let { java.text.SimpleDateFormat("dd/MM HH:mm", java.util.Locale("pt", "BR"))?.format(java.util.Date(it)) } ?: "horário indisponível"}")
-            appendLine("Registros guardados: ${linesArray.length()} · Total informado pelo jogo: ${market.optInt("total", 0)}")
-            appendLine("Páginas observadas: ${market.optJSONArray("paginasObservadas")?.length() ?: 1}")
+            appendLine("Registros guardados: ${linesArray.length()} · Total informado pelo jogo: $totalRecords")
+            val pageCount = market.optJSONArray("paginasObservadas")?.length() ?: 1
+            appendLine("Páginas observadas: $pageCount")
+            if (totalRecords > 0) {
+                val coverage = (100.0 * linesArray.length() / totalRecords).coerceIn(0.0, 100.0)
+                appendLine("Cobertura da amostra: ${"%.1f".format(coverage)}% do total informado")
+            }
             appendLine()
             when {
                 isSalesHistory -> {
