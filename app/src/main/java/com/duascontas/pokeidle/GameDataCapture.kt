@@ -128,9 +128,40 @@ object GameDataCapture {
         now - diagnostics.lastPublishAt < 8000) return;
     diagnostics.lastPublishAt = now;
     const pokemons = Array.isArray(state.pokemons) ? state.pokemons.map(safePokemon) : [];
+    const team = pokemons.filter(p => p.slot != null)
+      .sort((a, b) => (Number(a.slot) || 0) - (Number(b.slot) || 0));
     const active = pokemons.find(p => String(p.id) === String(state.activeId)) || null;
+    const metrics = measure();
+    const automation = state.automation || {};
+    const loja = state.loja || {};
+    const guild = state.guild || {};
+    const twitch = state.twitch || null;
+    const kick = state.kick || null;
     send({
-      kind, status: 'connected',
+      kind, status: 'connected', connected: true, ready: true,
+      nick: state.nick ?? null, level: state.level,
+      gold: Number(state.gold) || 0, xpTreinador: Number(state.xp) || 0,
+      activeId: state.activeId, huntSlug: state.huntSlug,
+      team, pokemonCount: pokemons.length,
+      gameAuto: {
+        autoPotion: !!automation.autoPotion, autoRevive: !!automation.autoRevive,
+        autoBall: !!automation.autoBall, ballIds: automation.ballIds ?? [],
+        potionIds: automation.potionIds ?? [], autoVoltarHunt: !!automation.autoVoltarHunt
+      },
+      euXp: {
+        level: state.level,
+        loja: { vipAte: Number(loja.vipAte) || 0, boosts: loja.boosts ?? {}, atrasados: loja.atrasados ?? null },
+        guildBonusPct: Number(state.guildBonusPct) || 0,
+        guild: { boostAte: Number(guild.boostAte) || 0 },
+        twitch: twitch ? { assistindo: !!twitch.assistindo, pctAtual: Number(twitch.pctAtual) || 0 } : null,
+        kick: kick ? { pct: Number(kick.pct) || 0, bonus: kick.bonus ?? {} } : null,
+        evento: state.evento ?? null
+      },
+      xpMedido: {
+        kph: metrics.killsH, kphReal: metrics.killsH != null,
+        nivelPokemon: active?.level ?? null, minutos: metrics.sampleMinutes,
+        xpPokemonH: metrics.xpPokemonH
+      },
       hunts: hunts.map(h => ({
         slug: h.slug, nome: h.nome, nivel: h.nivel,
         regiao: h.regiao, area: h.area,
@@ -145,7 +176,7 @@ object GameDataCapture {
         activePokemon: active, pokemonCount: pokemons.length, pokemons
       },
       catalog: catalogData,
-      measurements: measure(), market: marketData,
+      measurements: metrics, market: marketData,
       diagnostics: { ...diagnostics }
     });
   };
