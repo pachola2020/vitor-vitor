@@ -110,7 +110,7 @@ class MainActivity : Activity() {
         brand.addView(label("Assistant", 28f, TEXT, true))
         brand.addView(label("Painel pessoal de acompanhamento", 13f, MUTED))
         top.addView(brand, LinearLayout.LayoutParams(0, -2, 1f))
-        val version = label("TESTE\n${BuildConfig.VERSION_NAME}", 11f, MUTED, true).apply {
+        val version = label("VERSÃO\n${BuildConfig.VERSION_NAME}", 11f, MUTED, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(10), dp(8), dp(10), dp(8))
             background = roundedPanel(PANEL_ALT, 12)
@@ -213,6 +213,7 @@ class MainActivity : Activity() {
         root.addView(actionButton("Calcular Hunt Analyzer agora", true) { requestHuntAnalysis() })
         if (dashboardData?.optJSONObject("huntAnalysis")?.optString("status") == "estimativa_disponivel") addHuntAnalysisInline()
         addAnalysisOption("POKÉMON", "Equipe, Pokémon ativo, nível, IVs e atributos recebidos", ::showPokemonDetails)
+        addAnalysisOption("RECURSOS", "Bolas, poções e materiais registrados na sessão do jogo", ::showInventoryDetails)
         addAnalysisOption("SHINY HUNT", "Bolas usadas, Shinies vistos e Shinies registrados na sessão", ::showShinyDetails)
         addAnalysisOption("MERCADO", "Registros capturados da aba aberta no Mercado", ::showMarketDetails)
         space(18)
@@ -259,8 +260,8 @@ class MainActivity : Activity() {
         updatePermissionStatus()
         space(18)
 
-        sectionTitle("SOBRE ESTE TESTE")
-        root.addView(label("A versão original e a instalação anterior do Assistant continuam instaladas e não serão removidas por esta migração. Esta versão usa um pacote separado para preservar os dados antigos; será necessário entrar novamente no jogo nesta instalação. As janelas continuam usando o mecanismo flutuante existente. O dashboard não automatiza ações do jogo.", 12f, MUTED))
+        sectionTitle("SOBRE O ASSISTANT")
+        root.addView(label("O PokeIdle Assistant acompanha as contas selecionadas, organiza métricas observadas e executa análises sob demanda. As estimativas do Hunt Analyzer são teóricas quando não há medição real da Hunt. O aplicativo não automatiza compras, vendas ou ações de combate.", 12f, MUTED))
         root.addView(actionButton("Verificar atualização", true) {
             checkForAppUpdate()
         })
@@ -420,7 +421,7 @@ class MainActivity : Activity() {
             }
             if (hunts.length() > 45) appendLine("… e mais ${hunts.length() - 45} Hunts.")
             appendLine()
-            append("Esta tela lista os dados recebidos; o ranking comparativo e a simulação com/sem AoE ainda não estão conectados.")
+            append("A lista mostra as Hunts recebidas e liberadas pelo nível. O ranking comparativo por objetivo aparece no Hunt Analyzer.")
         }
         showDialog("Hunts", lines)
     }
@@ -493,6 +494,7 @@ class MainActivity : Activity() {
         }
         root.addView(header)
         space(8)
+        addHuntObjectiveSummary(pokemon)
         for (i in 0 until minOf(pokemon.length(), 8)) {
             val p = pokemon.optJSONObject(i) ?: continue
             val noAoe = p.optJSONObject("melhorXpSemAoe")
@@ -600,6 +602,85 @@ class MainActivity : Activity() {
         showDialog("Hunt Analyzer · comparativo", lines)
     }
 
+    private fun addHuntObjectiveSummary(pokemon: org.json.JSONArray) {
+        data class Candidate(val name: String, val hunt: String, val value: Long)
+        fun best(aoe: Boolean, metric: String): Candidate? {
+            val candidates = mutableListOf<Candidate>()
+            for (i in 0 until pokemon.length()) {
+                val p = pokemon.optJSONObject(i) ?: continue
+                val result = when {
+                    metric == "gold" && aoe -> p.optJSONObject("melhorGoldComAoe")
+                    metric == "gold" -> p.optJSONObject("melhorGold")
+                    aoe -> p.optJSONObject("melhorXpComAoe")
+                    else -> p.optJSONObject("melhorXpSemAoe")
+                } ?: continue
+                val key = when {
+                    metric == "gold" && aoe -> "goldHAoeHipotetico"
+                    metric == "gold" -> "goldH"
+                    metric == "trainer" && aoe -> "xpTreinadorHAoeHipotetico"
+                    metric == "trainer" -> "xpTreinadorH"
+                    aoe -> "xpPokemonHAoeHipotetico"
+                    else -> "xpPokemonH"
+                }
+                val value = result.optLong(key, -1L)
+                if (value >= 0L) candidates.add(Candidate(p.optString("nome", "Pokémon"), result.optString("nome", "Hunt"), value))
+            }
+            return candidates.maxByOrNull { it.value }
+        }
+        val card = column().apply {
+            setPadding(dp(13), dp(12), dp(13), dp(12))
+            background = roundedPanel(PANEL, 14)
+            addView(label("MELHORES OPÇÕES POR OBJETIVO", 11f, ACCENT, true))
+            addView(label("Cada Pokémon usa sua própria melhor Hunt liberada. AoE é um cenário separado e hipotético.", 10f, MUTED))
+            for ((title, metric, unit) in listOf(Triple("XP DO POKÉMON", "pokemon", "XP Pokémon/h"), Triple("XP DO TREINADOR", "trainer", "XP treinador/h"), Triple("GOLD", "gold", "Gold/h"))) {
+                addView(label(title, 10f, TEXT, true))
+                val normal = best(false, metric)
+                val aoe = best(true, metric)
+                if (normal != null) addView(label("Sem AoE: " + normal.name + " · " + normal.hunt + " · " + "%,d".format(normal.value) + " " + unit, 11f, TEXT))
+                else addView(label("Sem AoE: sem resultado", 10f, MUTED))
+                if (aoe != null) addView(label("Com AoE (hipótese): " + aoe.name + " · " + aoe.hunt + " · " + "%,d".format(aoe.value) + " " + unit, 10f, MUTED))
+            }
+        }
+        root.addView(card)
+        space(8)
+    }
+
+    private fun showInventoryDetails() {
+        val session = dashboardData?.optJSONObject("gameSession")
+        if (session == null) {
+            showDialog("Recursos", "Os contadores da sessão ainda não foram recebidos. Abra a conta no jogo e aguarde a sincronização.")
+            return
+        }
+        val labels = linkedMapOf(
+            "capturas" to "Capturas", "shiniesVistos" to "Shinies vistos", "shinies" to "Shinies registrados",
+            "bossTokens" to "Boss Tokens", "fragChave" to "Fragmentos de chave", "fragShiny" to "Fragmentos Shiny",
+            "fragBicicleta" to "Fragmentos de bicicleta", "fragMega" to "Fragmentos Mega",
+            "fragMegaShiny" to "Fragmentos Mega Shiny", "tmPeca" to "Peças de TM",
+            "tmPecaAoe" to "Peças de TM AoE", "ticketMistico" to "Tickets Místicos",
+            "ticketSafari" to "Tickets Safari", "fragOvoShiny" to "Fragmentos de ovo Shiny"
+        )
+        val lines = buildString {
+            appendLine("RECURSOS REGISTRADOS NA SESSÃO")
+            for ((key, title) in labels) if (session.has(key) && !session.isNull(key)) appendLine(title + ": " + session.optLong(key))
+            for (key in listOf("bolas", "pocoes")) {
+                val values = session.optJSONObject(key) ?: continue
+                appendLine()
+                appendLine(if (key == "bolas") "BOLAS" else "POÇÕES")
+                val keys = values.keys()
+                var shown = 0
+                while (keys.hasNext() && shown < 20) {
+                    val id = keys.next()
+                    appendLine(id + ": " + values.optLong(id))
+                    shown++
+                }
+                if (values.length() > shown) appendLine("… e mais " + (values.length() - shown) + " tipos.")
+            }
+            appendLine()
+            append("Contadores da sessão mantidos pelo jogo; não representam necessariamente todo o inventário e não estimam valor de mercado. Nenhum item é usado, vendido ou transferido.")
+        }
+        showDialog("Recursos da conta", lines)
+    }
+
     private fun showPokemonDetails() {
         val data = dashboardData
         val player = data?.optJSONObject("player")
@@ -683,7 +764,7 @@ class MainActivity : Activity() {
         val tab = market.optString("aba", "")
         val isSalesHistory = tab == "historicoGlobal"
         val isActiveListings = tab == "vitrine" || tab == "meus"
-        data class SaleSample(val price: Long, val currency: String, val isPokemon: Boolean, val name: String)
+        data class SaleSample(val price: Long, val currency: String, val isPokemon: Boolean, val name: String, val speciesKey: String)
         val samples = mutableListOf<SaleSample>()
         for (i in 0 until linesArray.length()) {
             val item = linesArray.optJSONObject(i) ?: continue
@@ -694,7 +775,9 @@ class MainActivity : Activity() {
             val isPokemon = ficha != null && (ficha.has("speciesId") || ficha.has("level"))
             val name = ficha?.optString("nome")?.takeIf { it.isNotBlank() }
                 ?: item.optString("nome", if (isPokemon) "Pokémon" else "Registro")
-            samples.add(SaleSample(price, currency, isPokemon, name))
+            val speciesId = ficha?.opt("speciesId")?.toString()?.takeIf { it.isNotBlank() && it != "null" }
+            val speciesKey = if (speciesId != null) "id:" + speciesId else "nome:" + name.trim().lowercase(java.util.Locale.ROOT)
+            samples.add(SaleSample(price, currency, isPokemon, name, speciesKey))
         }
         val lines = buildString {
             appendLine("ORIGEM DOS DADOS")
@@ -732,7 +815,24 @@ class MainActivity : Activity() {
                     val pokemonSales = samples.count { it.isPokemon }
                     val itemSales = samples.size - pokemonSales
                     appendLine("Composição: $pokemonSales vendas de Pokémon · $itemSales vendas de itens")
-                    appendLine("A mediana é calculada sobre os registros capturados, não sobre vendas futuras nem sobre todo o mercado.")
+                    appendLine()
+                    appendLine("REFERÊNCIA POR ESPÉCIE · VENDAS OBSERVADAS")
+                    for (currency in listOf("orb", "gold")) {
+                        val speciesGroups = samples.filter { it.isPokemon && it.currency.contains(currency) }
+                            .groupBy { it.speciesKey }.values.sortedByDescending { it.size }.take(6)
+                        if (speciesGroups.isEmpty()) continue
+                        appendLine(currencyLabel(currency))
+                        for (group in speciesGroups) {
+                            val prices = group.map { it.price }.sorted()
+                            val mid = prices.size / 2
+                            val med = if (prices.size % 2 == 0) ((prices[mid - 1].toDouble() + prices[mid].toDouble()) / 2.0).toLong() else prices[mid]
+                            val range = "%,d".format(prices.first()) + "–" + "%,d".format(prices.last())
+                            val confidence = if (group.size >= 5) "amostra moderada" else if (group.size >= 3) "amostra pequena" else "amostra insuficiente"
+                            appendLine("• " + group.first().name + ": n=" + group.size + " · mediana " + "%,d".format(med) + " · faixa " + range + " · " + confidence)
+                        }
+                    }
+                    appendLine()
+                    appendLine("A mediana usa somente registros capturados. A referência por espécie não prevê vendas futuras nem representa todo o mercado; sem ID de espécie, nomes iguais podem ser agrupados.")
                 }
                 isActiveListings -> {
                     appendLine("ANÚNCIOS ATIVOS · NÃO SÃO VENDAS")
