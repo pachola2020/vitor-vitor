@@ -10,10 +10,10 @@ android {
     defaultConfig {
         // Pacote separado para testar sem substituir o app que já está instalado.
         applicationId = "com.duascontas.pokeidle.assistant"
-        minSdk = 26
+        minSdk = 28
         targetSdk = 34
-        versionCode = 10
-        versionName = "0.5.5-analysis-test"
+        versionCode = 11
+        versionName = "0.5.6-analysis-test"
     }
 
     compileOptions {
