@@ -74,18 +74,9 @@ object AppUpdater {
                     }
                     if (newest != null) break
                 }
-                val current = if (Build.VERSION.SDK_INT >= 28) {
-                    activity.packageManager.getPackageInfo(activity.packageName, 0).longVersionCode
-                } else {
-                    @Suppress("DEPRECATION")
-                    activity.packageManager.getPackageInfo(activity.packageName, 0).versionCode.toLong()
-                }
                 val available = newest?.let { info ->
-                    val remoteCode = info.versionName.substringBefore("-").split(".")
-                        .fold(0L) { acc, part -> acc * 1000 + (part.toLongOrNull() ?: 0L) }
                     val localName = activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "0"
-                    if (info.versionName == localName.removeSuffix("-analysis-test")) info else
-                        if (remoteCode > versionCodeFromName(localName)) info else null
+                    if (versionCodeFromName(info.versionName) > versionCodeFromName(localName)) info else null
                 }
                 main.post { if (!activity.isFinishing) onResult(available) }
             } catch (e: Exception) {
@@ -162,6 +153,7 @@ object AppUpdater {
     }
 
     private fun install(activity: Activity, uri: Uri) {
+        activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY_PENDING_URI).apply()
         try {
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, "application/vnd.android.package-archive")
