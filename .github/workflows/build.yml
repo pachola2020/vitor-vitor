@@ -46,7 +46,7 @@ jobs:
           gradle-version: 8.9
 
       - name: Compilar APK de teste
-        run: gradle assembleDebug --no-daemon --stacktrace
+        run: gradle testDebugUnitTest lintDebug assembleDebug --no-daemon --stacktrace
 
       - name: Guardar APK para teste
         uses: actions/upload-artifact@v4
