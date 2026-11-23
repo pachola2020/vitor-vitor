@@ -76,7 +76,7 @@ class MainActivity : Activity() {
         brand.addView(label("Assistant", 28f, TEXT, true))
         brand.addView(label("Painel pessoal de acompanhamento", 13f, MUTED))
         top.addView(brand, LinearLayout.LayoutParams(0, -2, 1f))
-        val version = label("TESTE\n0.5.18", 11f, MUTED, true).apply {
+        val version = label("TESTE\n${BuildConfig.VERSION_NAME}", 11f, MUTED, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(10), dp(8), dp(10), dp(8))
             setBackgroundColor(PANEL_ALT)
@@ -118,6 +118,7 @@ class MainActivity : Activity() {
             addView(label(captureSummary().second, 13f, TEXT))
         }
         root.addView(notice)
+        root.addView(actionButton("Ver diagnóstico técnico", false) { showCaptureDiagnostics() })
         space(12)
 
         val metricRows = listOf(
@@ -219,69 +220,51 @@ class MainActivity : Activity() {
 
     private fun captureSummary(): Pair<String, String> {
         val data = CaptureStore.read(this, selectedAccount)
-            ?: return "AGUARDANDO DADOS DO JOGO" to "Abra a conta selecionada para iniciar a leitura. A captura é instalada antes do WebSocket e não envia comandos ao jogo."
+            ?: return "AGUARDANDO DADOS DO JOGO" to
+                "Abra a conta selecionada para iniciar a captura passiva. As análises detalhadas só serão executadas quando você solicitar."
         val status = data.optString("status", "unknown")
         if (status == "unsupported") {
-            return "CAPTURA INDISPONÍVEL NESTE WEBVIEW" to "O componente de leitura do Android não está disponível nesta versão. Nenhum dado foi capturado."
+            return "CAPTURA INDISPONÍVEL" to
+                "Este WebView não oferece o recurso necessário. O jogo continua funcionando sem a captura."
         }
         if (status == "capture_error") {
-            val error = data.optString("error", "falha desconhecida")
-            return "LEITOR NÃO INICIALIZADO" to "A captura passiva encontrou uma falha ($error). O jogo continua independente; tente fechar e reabrir somente esta janela."
+            return "LEITOR NÃO INICIALIZADO" to
+                "A captura encontrou uma falha (${data.optString("error", "falha desconhecida")}). Consulte o diagnóstico técnico."
         }
-        val hunts = data.optJSONArray("hunts")?.length() ?: 0
         val player = data.optJSONObject("player")
-        val active = player?.optJSONObject("activePokemon")
-        val pokemon = active?.optString("nome")?.takeIf { !it.isNullOrBlank() } ?: "não identificado"
-        val teamCount = data.optJSONArray("team")?.length() ?: 0
-        val catalog = data.optJSONObject("catalog")
-        val typeTableSize = catalog?.optJSONObject("combate")?.optJSONObject("tabelaTipos")?.length() ?: 0
-        val combatReady = typeTableSize > 0
-        val hunt = player?.optString("huntSlug")?.takeIf { !it.isNullOrBlank() } ?: "não identificada"
+        val hunts = data.optJSONArray("hunts")?.length() ?: 0
         val level = player?.optInt("level", 0) ?: 0
+        val pokemon = player?.optJSONObject("activePokemon")?.optString("nome")?.takeIf { !it.isNullOrBlank() } ?: "não identificado"
+        val hunt = player?.optString("huntSlug")?.takeIf { !it.isNullOrBlank() } ?: "não identificada"
         val stamp = data.optLong("updatedAt", 0L)
         val age = if (stamp > 0) ((System.currentTimeMillis() - stamp) / 1000).coerceAtLeast(0) else -1
-        val freshness = if (age >= 0) "último pacote há ${age}s" else "sem horário"
-        val market = data.optJSONObject("market")
-        val marketCount = market?.optJSONArray("linhas")?.length() ?: 0
-        val marketText = if (marketCount > 0) " · Mercado: $marketCount registros lidos (${market?.optString("aba")})" else ""
-        val diag = data.optJSONObject("diagnostics")
-        val frames = diag?.optInt("jsonFrames", 0) ?: 0
-        val welcomeCount = diag?.optInt("welcome", 0) ?: 0
-        val estadoCount = diag?.optInt("estado", 0) ?: 0
-        val lastType = diag?.optString("lastType")?.takeIf { !it.isNullOrBlank() } ?: "nenhum"
-        val huntsWithSpecies = diag?.optInt("huntsWithSpecies", 0) ?: 0
-        val speciesEntries = diag?.optInt("huntSpeciesEntries", 0) ?: 0
-        val statsCount = diag?.optInt("pokemonWithStats", 0) ?: 0
-        val speciesIdCount = diag?.optInt("pokemonWithSpeciesId", 0) ?: 0
-        val typeEntries = diag?.optInt("typeChartEntries", 0) ?: 0
-        val activeFound = diag?.optBoolean("activePokemonFound", false) == true
-        val messageTypes = diag?.optJSONObject("typeCounts")?.toString() ?: "{}"
-        val battleKinds = diag?.optJSONObject("battleEventKinds")?.toString() ?: "{}"
-        val battleKeys = diag?.optJSONObject("battleEventKeys")?.toString() ?: "{}"
-        val battleSamples = diag?.optJSONObject("battleEventSamples")?.toString() ?: "{}"
-        val sessionAvailable = diag?.optBoolean("gameSessionAvailable", false) == true
-        val sessionKeys = diag?.optJSONArray("gameSessionKeys")?.let { arr ->
-            (0 until arr.length()).joinToString(", ") { arr.optString(it) }
-        } ?: "aguardando"
-        val fieldCount = diag?.optInt("field", 0) ?: 0
-        val fieldKeys = diag?.optJSONArray("fieldDataKeys")?.let { arr ->
-            (0 until arr.length()).joinToString(", ") { arr.optString(it) }
-        } ?: "aguardando"
-        val geometryHints = diag?.optJSONArray("fieldGeometryHints")?.length() ?: 0
-        val marketKeys = diag?.optJSONArray("marketMessageKeys")?.let { arr ->
-            (0 until arr.length()).joinToString(", ") { arr.optString(it) }
-        } ?: "aguardando"
-        val diagnosticText = " · Protocolo: $frames JSON, welcome $welcomeCount, estado $estadoCount, última: $lastType · Tipos de mensagem: $messageTypes · Eventos de batalha: $battleKinds ($battleKeys) amostras=$battleSamples · Sessão oficial: ${if (sessionAvailable) "disponível" else "não localizada"} [$sessionKeys] · Campo: $fieldCount eventos [$fieldKeys], $geometryHints estruturas espaciais candidatas · Chaves do mercado: $marketKeys · Estrutura: $huntsWithSpecies Hunts/$speciesEntries grupos de espécies, $statsCount Pokémon com stats, $speciesIdCount com speciesId, $typeEntries tipos, ativo ${if (activeFound) "ok" else "não encontrado"}"
+        val freshness = if (age >= 0) "Atualizado há ${age}s" else "horário indisponível"
         return if (player != null && hunts > 0) {
-            "DADOS RECEBIDOS · ${accountNames[selectedAccount - 1].uppercase()}" to
-                "$hunts Hunts recebidas · Equipe: $teamCount Pokémon · Catálogo de combate: ${if (combatReady) "recebido" else "incompleto"} · Treinador Nv. $level · Hunt: $hunt · Pokémon ativo: $pokemon$marketText$diagnosticText · $freshness. Captura observacional; Hunt Analyzer preliminar disponível no menu; calibragem de geometria pendente."
+            "JOGO CONECTADO · ${accountNames[selectedAccount - 1].uppercase()}" to
+                "Treinador Nv. $level · Hunt: $hunt · Pokémon ativo: $pokemon · $hunts Hunts recebidas. $freshness. Abra o Hunter para executar uma consulta quando precisar."
         } else if (status == "connected") {
-            "WEBSOCKET CONECTADO · AGUARDANDO QUADRO INICIAL" to
-                "A conexão abriu, mas ainda não chegou o quadro inicial. $diagnosticText · $freshness."
+            "CONECTADO · SINCRONIZANDO" to "A conexão foi detectada; aguardando os primeiros dados do jogo. $freshness."
         } else {
-            "LEITOR INSTALADO · AGUARDANDO WEBSOCKET" to
-                "O leitor foi instalado, mas ainda não recebeu o quadro inicial. $diagnosticText · $freshness."
+            "CAPTURA ATIVA · AGUARDANDO JOGO" to "O leitor passivo está instalado e aguarda a conexão do jogo. $freshness."
         }
+    }
+
+    private fun showCaptureDiagnostics() {
+        val data = CaptureStore.read(this, selectedAccount)
+        if (data == null) {
+            showDialog("Diagnóstico técnico", "Ainda não há dados desta conta. Abra o jogo e tente novamente.")
+            return
+        }
+        val details = buildString {
+            appendLine("Conta: ${accountNames[selectedAccount - 1]}")
+            appendLine("Status: ${data.optString("status", "desconhecido")}")
+            appendLine("Última atualização: ${data.optLong("updatedAt", 0L)}")
+            appendLine()
+            appendLine("Dados estruturados:")
+            append(data.toString(2).take(12000))
+            if (data.toString().length > 12000) appendLine("\n… conteúdo truncado para manter a tela responsiva.")
+        }
+        showDialog("Diagnóstico técnico", details)
     }
 
     private fun sessionRate(session: org.json.JSONObject?, key: String): Long? {
