@@ -86,9 +86,11 @@ object GameDataCapture {
   const safePokemon = (p) => ({
     id: p.id, pokeId: p.pokeId, speciesId: p.speciesId, nome: p.nome,
     level: p.level, xp: p.xp, ivs: p.ivs, stats: p.stats,
-    tipos: p.tipos, tmAoe: !!(p.tmAoe ?? p.tm_aoe),
+    tipos: p.tipos ?? null, tmAoe: p.tmAoe ?? p.tm_aoe ?? null,
     tmElemental: p.tmElemental ?? null, maxHp: p.maxHp, hp: p.hp,
-    shiny: !!p.shiny, potencia: p.potencia, nota: p.nota
+    shiny: !!p.shiny, potencia: p.potencia, nota: p.nota,
+    quality: p.quality ?? null, iv: p.iv ?? null, slot: p.slot ?? null,
+    poder: p.poder ?? null, refino: p.refino ?? null
   });
   const measure = () => {
     const now = Date.now();
@@ -197,6 +199,17 @@ object GameDataCapture {
               // Catálogo/constantes enviados no welcome pelo próprio servidor do jogo.
               // Só guardamos dados públicos de jogo necessários ao analisador.
               catalogData = {
+                at: Date.now(),
+                hunts,
+                bolas: (msg.catalogoBolas ?? []).map(b => ({
+                  id: b.id, nome: b.nome, priceGold: Number(b.priceGold) || 0,
+                  compravel: !!b.compravel, catchRate: b.catchRate ?? null
+                })),
+                compraveis: (msg.itensCompraveis ?? []).map(i => ({
+                  itemId: i.itemId, preco: Number(i.preco) || 0
+                })),
+                captura: msg.captura ?? null,
+                chanceShiny: Number(msg.chanceShiny) || 0,
                 combate: {
                   tabelaTipos: msg.tabelaTipos ?? {},
                   ampliacaoHunt: msg.ampliacaoHunt ?? 1.5,
