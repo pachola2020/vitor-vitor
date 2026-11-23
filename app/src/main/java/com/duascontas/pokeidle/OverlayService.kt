@@ -694,7 +694,11 @@ open class OverlayService : Service() {
                     "opportunities" -> {
                         val event = xp?.opt("evento")
                         val hunts = data.optJSONArray("hunts")?.length() ?: 0
-                        "OPORTUNIDADES\nTreinador Nv. ${player?.optInt("level", 0) ?: 0}\nHunts recebidas: $hunts\nEvento informado pelo jogo: ${event?.toString() ?: "nenhum dado disponível"}\nA detecção de encontros raros ao vivo ainda precisa de uma fonte de evento validada."
+                        val measured = data.optJSONObject("measurements")
+                        fun measuredRate(key: String): String =
+                            measured?.takeIf { it.has(key) && !it.isNull(key) }
+                                ?.optLong(key)?.let { "%,d/h".format(it) } ?: "aguardando"
+                        "OPORTUNIDADES\\nTreinador Nv. ${player?.optInt("level", 0) ?: 0}\\nHunts recebidas: $hunts\\nXP Pokémon: ${measuredRate("xpPokemonH")} · XP treinador: ${measuredRate("xpTrainerH")}\\nAbates: ${measuredRate("killsH")} · Coins líquidos: ${measuredRate("coinsNetH")}\\nEvento informado pelo jogo: ${event?.toString() ?: "nenhum dado disponível"}\\nEncontros raros ao vivo ainda dependem de uma fonte de evento validada."
                     }
                     "xp" -> {
                         val twitch = xp?.optJSONObject("twitch")
