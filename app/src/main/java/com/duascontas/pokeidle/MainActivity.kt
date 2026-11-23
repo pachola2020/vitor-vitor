@@ -492,6 +492,25 @@ class MainActivity : Activity() {
                 rates.put(key, (difference.toDouble() * 3600000.0 / duration.toDouble()).toLong())
             }
         }
+        val captureHistory = snapshot?.optJSONObject("captureHistory")
+        val captureRecords = captureHistory?.optJSONArray("records")
+        val capturesBySpecies = org.json.JSONObject()
+        var captureEventsObserved = 0
+        var captureShiniesObserved = 0
+        if (captureRecords != null) for (i in 0 until captureRecords.length()) {
+            val capture = captureRecords.optJSONObject(i) ?: continue
+            if (capture.optLong("em", 0L) < active.optLong("startedAt", 0L)) continue
+            val speciesId = capture.opt("speciesId")?.takeIf { it != org.json.JSONObject.NULL }?.toString()
+            val speciesKey = if (!speciesId.isNullOrBlank()) "id:" + speciesId
+                else "nome:" + capture.optString("nome", "desconhecido").lowercase(java.util.Locale.ROOT)
+            capturesBySpecies.put(speciesKey, capturesBySpecies.optInt(speciesKey, 0) + 1)
+            captureEventsObserved++
+            if (capture.optBoolean("shiny")) captureShiniesObserved++
+        }
+        val expectedCaptureDelta = delta.optLong("capturas", -1L)
+        val captureHistoryAvailable = captureHistory?.optBoolean("available", false) == true
+        val captureHistoryComplete = captureHistoryAvailable &&
+            (expectedCaptureDelta < 0L || captureEventsObserved >= expectedCaptureDelta)
         val endingContext = preyContext(snapshot)
         val contextStable = active.optString("huntSlug") == endingContext.optString("huntSlug") &&
             active.optString("activeId") == endingContext.optString("activeId") &&
@@ -513,6 +532,11 @@ class MainActivity : Activity() {
             .put("comparisonKey", active.optString("huntSlug") + "|" + active.optString("activeId") + "|" +
                 active.optInt("trainerLevel") + "|" + active.optInt("pokemonLevel") + "|" + active.optString("bonusSignature"))
             .put("durationSource", durationSource)
+            .put("captureHistoryAvailable", captureHistoryAvailable)
+            .put("captureHistoryComplete", captureHistoryComplete)
+            .put("captureEventsObserved", captureEventsObserved)
+            .put("captureShiniesObserved", captureShiniesObserved)
+            .put("capturesBySpecies", capturesBySpecies)
             .put("contextStable", contextStable)
             .put("validForComparison", validForComparison)
             .put("delta", delta)
@@ -538,7 +562,9 @@ class MainActivity : Activity() {
             "\nXP treinador: " + rate("xpTreinador") +
             "\nGold: " + rate("gold") +
             "\nAbates: " + rate("abates") +
-            "\nCapturas: " + rate("capturas") +
+            "\nCapturas pelo contador da sessão: " + rate("capturas") +
+            "\nCapturas detalhadas no histórico: " + captureEventsObserved + " · Shinies: " + captureShiniesObserved +
+            "\nCobertura do histórico: " + if (!captureHistoryAvailable) "indisponível" else if (captureHistoryComplete) "completa para o intervalo" else "parcial (histórico recente limitado)" +
             "\nBolas consumidas: " + (delta.optLong("bolas", -1L).takeIf { it >= 0 }?.toString() ?: "sem dado") +
             "\n\n" + validity +
             "\nResultado observado no intervalo. Uma amostra isolada não prova causalidade. Faça várias amostras ON/OFF em condições equivalentes."
@@ -590,9 +616,30 @@ class MainActivity : Activity() {
                     .append(" · Gold ").append(average("gold")).append("/h")
                     .append(" · abates ").append(average("abates")).append("/h\n")
             }
+            val speciesKeys = group.flatMap { item ->
+                val species = item.optJSONObject("capturesBySpecies") ?: return@flatMap emptyList<String>()
+                val names = mutableListOf<String>()
+                val iterator = species.keys()
+                while (iterator.hasNext()) names.add(iterator.next())
+                names
+            }.distinct().take(4)
+            for (speciesKey in speciesKeys) {
+                fun speciesRate(condition: String): String {
+                    val samples = group.filter { it.optString("condition") == condition }
+                    var count = 0L
+                    var elapsed = 0L
+                    for (sample in samples) {
+                        count += sample.optJSONObject("capturesBySpecies")?.optLong(speciesKey, 0L) ?: 0L
+                        elapsed += sample.optLong("durationMs", 0L)
+                    }
+                    return if (elapsed > 0L) "%.2f/h".format(count.toDouble() * 3600000.0 / elapsed.toDouble()) else "—"
+                }
+                out.append("Espécie ").append(speciesKey).append(" · OFF ").append(speciesRate("OFF"))
+                    .append(" · ON ").append(speciesRate("ON")).append("\n")
+            }
             out.append("\n")
         }
-        out.append("Somente pares com Hunt, Pokémon, nível e bônus iguais entram aqui. Resultado observacional; não prova causalidade.")
+        out.append("Somente pares com Hunt, Pokémon, nível e bônus iguais entram aqui. Capturas por espécie vêm do histórico recente do jogo e podem ser parciais. Resultado observacional; não prova causalidade.")
         return out.toString()
     }
 
@@ -1098,6 +1145,12 @@ class MainActivity : Activity() {
         val throwsRate = nullableLong(measured, "ballThrowsH")
         val shinyEvents = nullableLong(measured, "shinyCapturesObserved")
         val sampleMinutes = nullableLong(measured, "sampleMinutes") ?: 0L
+        val captureHistory = data.optJSONObject("captureHistory")
+        val captureRecords = captureHistory?.optJSONArray("records")
+        var recentShinies = 0
+        if (captureRecords != null) for (i in 0 until captureRecords.length()) {
+            if (captureRecords.optJSONObject(i)?.optBoolean("shiny") == true) recentShinies++
+        }
         val diag = data.optJSONObject("diagnostics")
         val eventKinds = diag?.optJSONObject("battleEventKinds")
         var eventTypeCount = 0
@@ -1120,6 +1173,7 @@ class MainActivity : Activity() {
             appendLine("Bolas no contador da sessão: ${balls ?: "aguardando"}")
             appendLine("Shinies vistos: ${seen ?: "aguardando"}")
             appendLine("Shinies registrados: ${captured ?: "aguardando"}")
+            appendLine("Histórico recente de capturas: ${captureRecords?.length() ?: 0} registros · $recentShinies Shinies")
             appendLine("Sessão local disponível: ${if (sessionAvailable) "sim" else "não"}")
             appendLine()
             appendLine("OBSERVAÇÃO DE EVENTOS")
