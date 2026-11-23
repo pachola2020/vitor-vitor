@@ -478,7 +478,10 @@ class MainActivity : Activity() {
             showDialog("Prey", "Não consegui ler os contadores finais. Atualize os dados da conta e tente finalizar novamente.")
             return
         }
-        val duration = (System.currentTimeMillis() - active.optLong("startedAt", System.currentTimeMillis())).coerceAtLeast(1L)
+        val wallDuration = (System.currentTimeMillis() - active.optLong("startedAt", System.currentTimeMillis())).coerceAtLeast(1L)
+        val sessionDuration = if (baseline.has("ms") && ending.has("ms")) ending.optLong("ms") - baseline.optLong("ms") else 0L
+        val duration = if (sessionDuration > 0L) sessionDuration else wallDuration
+        val durationSource = if (sessionDuration > 0L) "tempo ativo informado pela sessão do jogo" else "tempo entre as marcações"
         val rates = org.json.JSONObject()
         val delta = org.json.JSONObject()
         for (key in arrayOf("xpPokemon", "xpTreinador", "gold", "abates", "capturas", "shiniesVistos", "shinies", "bolas")) {
@@ -505,6 +508,11 @@ class MainActivity : Activity() {
             .put("trainerLevel", active.optInt("trainerLevel"))
             .put("pokemonName", active.optString("pokemonName"))
             .put("pokemonLevel", active.optInt("pokemonLevel"))
+            .put("activeId", active.optString("activeId"))
+            .put("bonusSignature", active.optString("bonusSignature"))
+            .put("comparisonKey", active.optString("huntSlug") + "|" + active.optString("activeId") + "|" +
+                active.optInt("trainerLevel") + "|" + active.optInt("pokemonLevel") + "|" + active.optString("bonusSignature"))
+            .put("durationSource", durationSource)
             .put("contextStable", contextStable)
             .put("validForComparison", validForComparison)
             .put("delta", delta)
@@ -525,7 +533,7 @@ class MainActivity : Activity() {
         val message = "Condição: Prey " + active.optString("condition") +
             "\nHunt: " + active.optString("huntSlug") +
             "\nPokémon: " + active.optString("pokemonName") + " Nv. " + active.optInt("pokemonLevel") +
-            "\nDuração: " + (duration / 60000L) + " min" +
+            "\nDuração: " + (duration / 60000L) + " min (" + durationSource + ")" +
             "\n\nXP Pokémon: " + rate("xpPokemon") +
             "\nXP treinador: " + rate("xpTreinador") +
             "\nGold: " + rate("gold") +
@@ -543,33 +551,48 @@ class MainActivity : Activity() {
                 .getString("history_" + account, "[]") ?: "[]")
         } catch (_: Exception) { org.json.JSONArray() }
         if (history.length() == 0) return "Ainda não há amostras registradas."
-        val out = StringBuilder("MÉDIAS EXPLORATÓRIAS · " + history.length() + " amostras\n")
-        for (condition in arrayOf("ON", "OFF")) {
-            var count = 0
-            var xpPokemon = 0L
-            var xpTrainer = 0L
-            var gold = 0L
-            var kills = 0L
-            for (i in 0 until history.length()) {
-                val item = history.optJSONObject(i) ?: continue
-                if (item.optString("condition") != condition || !item.optBoolean("validForComparison", false)) continue
-                val rates = item.optJSONObject("ratesPerHour") ?: continue
-                if (!rates.has("xpPokemon")) continue
-                count++
-                xpPokemon += rates.optLong("xpPokemon")
-                xpTrainer += rates.optLong("xpTreinador")
-                gold += rates.optLong("gold")
-                kills += rates.optLong("abates")
-            }
-            if (count > 0) {
-                out.append("Prey ").append(condition).append(" · ").append(count).append(" amostras · XP Pokémon ")
-                    .append("%,d".format(xpPokemon / count)).append("/h · XP treinador ")
-                    .append("%,d".format(xpTrainer / count)).append("/h · Gold ")
-                    .append("%,d".format(gold / count)).append("/h · abates ")
-                    .append("%,d".format(kills / count)).append("/h\n")
-            } else out.append("Prey ").append(condition).append(" · aguardando amostras\n")
+        val groups = linkedMapOf<String, MutableList<org.json.JSONObject>>()
+        for (i in 0 until history.length()) {
+            val item = history.optJSONObject(i) ?: continue
+            if (!item.optBoolean("validForComparison", false)) continue
+            val key = item.optString("comparisonKey")
+            if (key.isBlank()) continue
+            groups.getOrPut(key) { mutableListOf() }.add(item)
         }
-        out.append("Compare apenas amostras com Hunt, Pokémon, nível e bônus semelhantes.")
+        val matched = groups.values.filter { group ->
+            group.any { it.optString("condition") == "ON" } &&
+                group.any { it.optString("condition") == "OFF" }
+        }
+        if (matched.isEmpty()) {
+            val validCount = groups.values.sumOf { it.size }
+            return "Amostras registradas: " + history.length() +
+                " · válidas individualmente: " + validCount +
+                "\nAinda não existe um par Prey ON/OFF com a mesma Hunt, Pokémon, nível e bônus. Registre as duas condições sem alterar o cenário."
+        }
+        val out = StringBuilder("COMPARAÇÕES EM CONDIÇÕES EQUIVALENTES\n")
+        for (group in matched.take(4)) {
+            val first = group.first()
+            out.append(first.optString("huntSlug")).append(" · ")
+                .append(first.optString("pokemonName")).append(" Nv. ")
+                .append(first.optInt("pokemonLevel")).append("\n")
+            for (condition in arrayOf("OFF", "ON")) {
+                val samples = group.filter { it.optString("condition") == condition }
+                fun average(key: String): String {
+                    val values = samples.mapNotNull { item ->
+                        val rates = item.optJSONObject("ratesPerHour")
+                        if (rates != null && rates.has(key)) rates.optLong(key) else null
+                    }
+                    return if (values.isEmpty()) "—" else "%,d".format(values.average().toLong())
+                }
+                out.append("Prey ").append(condition).append(" · n=").append(samples.size)
+                    .append(" · XP Pokémon ").append(average("xpPokemon")).append("/h")
+                    .append(" · XP treinador ").append(average("xpTreinador")).append("/h")
+                    .append(" · Gold ").append(average("gold")).append("/h")
+                    .append(" · abates ").append(average("abates")).append("/h\n")
+            }
+            out.append("\n")
+        }
+        out.append("Somente pares com Hunt, Pokémon, nível e bônus iguais entram aqui. Resultado observacional; não prova causalidade.")
         return out.toString()
     }
 
