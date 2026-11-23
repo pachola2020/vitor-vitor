@@ -84,6 +84,7 @@ object GameDataCapture {
   let marketData = null;
   let fieldData = null;
   let catalogData = null;
+  let sessionDiagnostics = { available: false, keys: [] };
   // Estatísticas oficiais da sessão que o próprio jogo mantém no armazenamento local.
   // Só são lidos contadores de jogo; nunca cookies, tokens ou credenciais.
   const readGameSession = () => {
@@ -94,6 +95,7 @@ object GameDataCapture {
       if (!raw) return null;
       const source = JSON.parse(raw);
       if (!source || typeof source !== 'object' || Array.isArray(source)) return null;
+      sessionDiagnostics = { available: true, keys: Object.keys(source).filter(k => !/token|cookie|auth|password|senha|email|credential/i.test(k)).slice(0, 60) };
       const out = {};
       for (const key of ['ms','xpTreinador','xpPokemon','gold','abates','capturas',
         'shiniesVistos','shinies','bossTokens','fragChave','fragShiny',
@@ -115,6 +117,7 @@ object GameDataCapture {
       }
       return out;
     } catch (_) {
+      sessionDiagnostics = { available: false, keys: [] };
       return null;
     }
   };
@@ -152,7 +155,7 @@ object GameDataCapture {
     socketSeen: 0, textFrames: 0, jsonFrames: 0, binaryFrames: 0,
     welcome: 0, estado: 0, batalha: 0, market: 0, field: 0,
     lastType: null, lastMessageAt: 0, lastPublishAt: 0, marketMessageKeys: [], marketLineKeys: [], fieldMessageKeys: [],
-    typeCounts: {}, battleEventKinds: {}, battleEventKeys: {}, lastMessageKeys: []
+    typeCounts: {}, battleEventKinds: {}, battleEventKeys: {}, battleEventSamples: {}, lastMessageKeys: []
   };
   const safeMarketLine = (line) => {
     const f = line && (line.ficha || line.pokemon) ? (line.ficha || line.pokemon) : {};
@@ -552,7 +555,9 @@ object GameDataCapture {
         pokemonWithStats: pokemons.filter(p => p.stats && typeof p.stats === 'object').length,
         pokemonWithSpeciesId: pokemons.filter(p => p.speciesId != null).length,
         activePokemonFound: !!active,
-        teamCount: team.length
+        teamCount: team.length,
+        gameSessionAvailable: sessionDiagnostics.available,
+        gameSessionKeys: sessionDiagnostics.keys
       }
     });
   };
@@ -685,6 +690,18 @@ object GameDataCapture {
                   diagnostics.battleEventKinds[ev.k] = (diagnostics.battleEventKinds[ev.k] || 0) + 1;
                   if (!diagnostics.battleEventKeys[ev.k]) {
                     diagnostics.battleEventKeys[ev.k] = Object.keys(ev).slice(0, 24);
+                  }
+                  if (!diagnostics.battleEventSamples[ev.k]) diagnostics.battleEventSamples[ev.k] = [];
+                  if (diagnostics.battleEventSamples[ev.k].length < 3) {
+                    const sample = {};
+                    for (const key of ['k','quem','pokemonId','pokeId','speciesId','id','bola','ballId','itemId',
+                      'resultado','sucesso','capturado','shiny','huntSlug','area','tipo','motivo','level']) {
+                      const value = ev[key];
+                      if (value == null || ['string','number','boolean'].includes(typeof value)) {
+                        if (value !== undefined) sample[key] = value;
+                      }
+                    }
+                    diagnostics.battleEventSamples[ev.k].push(sample);
                   }
                 }
                 if (ev && ev.k === 'morte' && ev.quem === 'selvagem') kills.push(Date.now());
