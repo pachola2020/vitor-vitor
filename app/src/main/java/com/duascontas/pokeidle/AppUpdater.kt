@@ -15,6 +15,7 @@ import android.os.Looper
 import android.provider.Settings
 import android.widget.Toast
 import org.json.JSONArray
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
@@ -257,9 +258,38 @@ object AppUpdater {
         install(activity, uri)
     }
 
+    private fun validateUpdatePackage(activity: Activity, uri: Uri) {
+        val temp = File.createTempFile("pokeidle-update-", ".apk", activity.cacheDir)
+        try {
+            activity.contentResolver.openInputStream(uri).use { input ->
+                requireNotNull(input) { "APK baixado não pode ser lido" }
+                temp.outputStream().use { output -> input.copyTo(output) }
+            }
+            val archive = activity.packageManager.getPackageArchiveInfo(temp.absolutePath, 0)
+                ?: throw IllegalStateException("O arquivo baixado não é um APK válido.")
+            require(archive.packageName == activity.packageName) {
+                "Este APK pertence a outro aplicativo (${archive.packageName}). Instalação cancelada para evitar criar uma segunda cópia."
+            }
+            val installed = activity.packageManager.getPackageInfo(activity.packageName, 0)
+            require(archive.longVersionCode > installed.longVersionCode) {
+                "O APK não é uma versão mais recente deste aplicativo."
+            }
+        } finally {
+            temp.delete()
+        }
+    }
+
     private fun install(activity: Activity, uri: Uri) {
-        activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .remove(KEY_PENDING_URI).remove(KEY_DOWNLOAD).remove(KEY_DIGEST)
+        val prefs = activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        try {
+            validateUpdatePackage(activity, uri)
+        } catch (e: Exception) {
+            prefs.edit().remove(KEY_PENDING_URI).remove(KEY_DOWNLOAD).remove(KEY_DIGEST)
+                .putBoolean(KEY_PERMISSION_REQUESTED, false).apply()
+            Toast.makeText(activity, "Atualização bloqueada: ${e.message}", Toast.LENGTH_LONG).show()
+            return
+        }
+        prefs.edit().remove(KEY_PENDING_URI).remove(KEY_DOWNLOAD).remove(KEY_DIGEST)
             .putBoolean(KEY_PERMISSION_REQUESTED, false).apply()
         try {
             val intent = Intent(Intent.ACTION_VIEW).apply {
