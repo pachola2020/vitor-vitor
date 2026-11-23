@@ -657,6 +657,9 @@ object GameDataCapture {
     }, delay);
   };
 
+  // A análise pesada só é iniciada quando o usuário solicita pelo painel nativo.
+  window.__pokeIdleRunHuntAnalysis = () => scheduleHuntAnalysis();
+
   const publish = (kind, force = false) => {
     if (!state) return;
     const now = Date.now();
@@ -838,7 +841,6 @@ object GameDataCapture {
               merge(msg.estado && typeof msg.estado === 'object' && !Array.isArray(msg.estado) ? msg.estado : {});
               previousBallCounts = readBallCounts();
               publish('welcome', true);
-              scheduleHuntAnalysis();
             } else if (msg.t === 'estado' && state) {
               diagnostics.estado++;
               merge(msg.estado && typeof msg.estado === 'object' && !Array.isArray(msg.estado) ? msg.estado : null);
@@ -855,7 +857,6 @@ object GameDataCapture {
                 });
               }
               publish('estado');
-              scheduleHuntAnalysis();
             } else if (msg.t === 'batalha' && Array.isArray(msg.ev)) {
               diagnostics.batalha++;
               for (const ev of msg.ev) {
