@@ -12,8 +12,8 @@ android {
         applicationId = "com.duascontas.pokeidle.assistant"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0-test"
+        versionCode = 2
+        versionName = "0.2.0-capture-test"
     }
 
     compileOptions {
@@ -24,4 +24,8 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+}
+
+dependencies {
+    implementation("androidx.webkit:webkit:1.12.1")
 }
