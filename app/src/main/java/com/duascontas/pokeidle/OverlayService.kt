@@ -14,6 +14,7 @@ import android.content.pm.ServiceInfo
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.Icon
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -71,6 +72,8 @@ open class OverlayService : Service() {
     private var bottomView: View? = null
     private var bubble: TextView? = null
     private var keyButton: TextView? = null
+    private var hunterPanel: LinearLayout? = null
+    private var hunterResult: TextView? = null
     private var web: WebView? = null
     private var lp: WindowManager.LayoutParams? = null
     private var wake: PowerManager.WakeLock? = null
@@ -455,6 +458,8 @@ open class OverlayService : Service() {
         val reloadBtn = smallButton("↻")
         val minBtn = smallButton("—")
         val closeBtn = smallButton("✕")
+        val hunterBtn = smallButton("H")
+        if (!isTool) bar.addView(hunterBtn)
         bar.addView(title)
         bar.addView(keyBtn)
         bar.addView(alphaBtn)
@@ -502,7 +507,20 @@ open class OverlayService : Service() {
 
         f.addView(c)
         f.addView(b)
-                          frame = f
+        frame = f
+        if (!isTool) {
+            hunterBtn.setOnClickListener { toggleHunterPanel() }
+            hunterPanel = createHunterPanel().also { panel ->
+                panel.visibility = View.GONE
+                val panelParams = FrameLayout.LayoutParams(
+                    dp(276), ViewGroup.LayoutParams.WRAP_CONTENT,
+                    Gravity.TOP or Gravity.END
+                )
+                panelParams.topMargin = dp(42)
+                panelParams.marginEnd = dp(8)
+                f.addView(panel, panelParams)
+            }
+        }
         content = c
         barView = bar
         bottomView = bottom
@@ -520,6 +538,118 @@ open class OverlayService : Service() {
         closeBtn.setOnClickListener { stopSelf() }
 
         wm?.addView(f, params)
+    }
+
+    private fun toggleHunterPanel() {
+        val panel = hunterPanel ?: return
+        panel.visibility = if (panel.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        if (panel.visibility == View.VISIBLE) showHunterSection("overview")
+    }
+
+    private fun createHunterPanel(): LinearLayout {
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            background = GradientDrawable().apply {
+                setColor(0xF51B2430.toInt())
+                cornerRadius = dp(16).toFloat()
+                setStroke(dp(1), 0xFF69C7B8.toInt())
+            }
+            elevation = dp(12).toFloat()
+            isClickable = true
+        }
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val title = TextView(this).apply {
+            text = "HUNTER  ·  CONSULTA RÁPIDA"
+            setTextColor(0xFF69C7B8.toInt())
+            textSize = 12f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            layoutParams = LinearLayout.LayoutParams(0, dp(36), 1f)
+        }
+        val close = TextView(this).apply {
+            text = "✕"
+            textSize = 18f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
+            setOnClickListener { panel.visibility = View.GONE }
+        }
+        header.addView(title)
+        header.addView(close)
+        panel.addView(header)
+        val actions = listOf(
+            "Oportunidades" to "opportunities",
+            "Bônus de XP" to "xp",
+            "Shiny" to "shiny",
+            "Calcular Hunt" to "hunt"
+        )
+        actions.forEach { (label, key) ->
+            val button = TextView(this).apply {
+                text = label
+                textSize = 13f
+                setTextColor(Color.WHITE)
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(10), 0, dp(10), 0)
+                background = GradientDrawable().apply {
+                    setColor(0xFF263544.toInt())
+                    cornerRadius = dp(10).toFloat()
+                }
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(40)
+                ).apply { bottomMargin = dp(6) }
+                setOnClickListener { showHunterSection(key) }
+            }
+            panel.addView(button)
+        }
+        val result = TextView(this).apply {
+            text = "Escolha uma consulta. A análise só será executada quando você solicitar."
+            textSize = 11f
+            setTextColor(0xFFD5DEE7.toInt())
+            setPadding(dp(4), dp(6), dp(4), dp(4))
+        }
+        hunterResult = result
+        panel.addView(result)
+        return panel
+    }
+
+    private fun showHunterSection(section: String) {
+        val output = hunterResult ?: return
+        val data = CaptureStore.read(this, accountId)
+        if (section == "hunt") {
+            web?.evaluateJavascript(
+                "window.__pokeIdleRunHuntAnalysis && window.__pokeIdleRunHuntAnalysis()",
+                null
+            )
+            output.text = "Hunt Analyzer solicitado para esta conta. O cálculo ocorre agora, sob demanda. Feche o painel para voltar ao jogo; reabra para consultar os dados capturados."
+            return
+        }
+        if (data == null) {
+            output.text = "Ainda não há dados capturados desta conta. Abra o jogo e aguarde a conexão."
+            return
+        }
+        val player = data.optJSONObject("player")
+        val xp = data.optJSONObject("euXp")
+        val session = data.optJSONObject("gameSession")
+        output.text = when (section) {
+            "opportunities" -> {
+                val event = xp?.opt("evento")
+                val hunts = data.optJSONArray("hunts")?.length() ?: 0
+                "OPORTUNIDADES\\nTreinador Nv. ${player?.optInt("level", 0) ?: 0}\\nHunts recebidas: $hunts\\nEvento informado pelo jogo: ${event?.toString() ?: "nenhum dado disponível"}\\nA detecção de encontros raros ao vivo ainda precisa de uma fonte de evento validada."
+            }
+            "xp" -> {
+                val loja = xp?.optJSONObject("loja")
+                val guild = xp?.optJSONObject("guild")
+                "BÔNUS DE XP\\nBônus de guilda: ${xp?.optDouble("guildBonusPct", 0.0) ?: 0.0}%\\nVIP/loja: ${loja?.toString() ?: "sem dados"}\\nGuilda: ${guild?.toString() ?: "sem dados"}\\nTwitch: ${xp?.optJSONObject("twitch")?.toString() ?: "sem dados"}\\nKick: ${xp?.optJSONObject("kick")?.toString() ?: "sem dados"}"
+            }
+            "shiny" -> {
+                val shinyCount = session?.optInt("shinies", -1) ?: -1
+                "SHINY\\nShinies registrados na sessão: ${if (shinyCount >= 0) shinyCount else "sem contador disponível"}\\nO leitor registra eventos de captura shiny observados; encontros raros não confirmados não serão inventados."
+            }
+            else -> "Consulta indisponível."
+        }
     }
 
     private fun smallButton(label: String): TextView {
