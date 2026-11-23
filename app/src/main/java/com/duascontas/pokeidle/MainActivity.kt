@@ -18,6 +18,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import android.app.AlertDialog
 
 /**
  * Painel inicial do PokeIdle Assistant.
@@ -187,8 +188,29 @@ class MainActivity : Activity() {
 
         sectionTitle("SOBRE ESTE TESTE")
         root.addView(label("A versão original continua separada e não é alterada por este teste. As janelas do jogo continuam usando o mecanismo flutuante existente. O dashboard não automatiza ações do jogo.", 12f, MUTED))
+        root.addView(actionButton("Verificar atualização", true) {
+            checkForAppUpdate()
+        })
         root.addView(actionButton("Ver versões do app no GitHub", false) {
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(RELEASES_URL)))
+        })
+    }
+
+    private fun checkForAppUpdate() {
+        Toast.makeText(this, "Verificando atualizações...", Toast.LENGTH_SHORT).show()
+        AppUpdater.check(this, { update ->
+            if (update == null) {
+                Toast.makeText(this, "Você já está usando a versão mais recente.", Toast.LENGTH_LONG).show()
+            } else {
+                AlertDialog.Builder(this)
+                    .setTitle("Atualização disponível")
+                    .setMessage("Versão instalada: ${packageManager.getPackageInfo(packageName, 0).versionName}\nNova versão: ${update.versionName}\n\nO APK será baixado. Depois, o Android solicitará confirmação para instalar.")
+                    .setNegativeButton("Depois", null)
+                    .setPositiveButton("Atualizar") { _, _ -> AppUpdater.downloadAndInstall(this, update) }
+                    .show()
+            }
+        }, { message ->
+            Toast.makeText(this, "Não foi possível verificar: $message", Toast.LENGTH_LONG).show()
         })
     }
 
