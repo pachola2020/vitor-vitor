@@ -432,7 +432,19 @@ class MainActivity : Activity() {
         }
         val lines = buildString {
             appendLine("Treinador Nv. ${analysis.optInt("nivelTreinador", 0)} · Pokémon analisados: ${analysis.optInt("pokemonAnalisados", 0)}")
-            appendLine("Estimativas por Pokémon · Hunts liberadas")
+            appendLine("MEDIÇÃO DA SESSÃO · DADOS OBSERVADOS")
+            val session = data?.optJSONObject("gameSession")
+            val measured = data?.optJSONObject("measurements")
+            val sessionMinutes = ((nullableLong(session, "ms") ?: 0L) / 60000L).toInt()
+            fun rateText(value: Long?): String = value?.let { "%,d/h".format(it) } ?: "aguardando amostra"
+            appendLine("XP Pokémon: ${rateText(sessionRate(session, "xpPokemon") ?: nullableLong(measured, "xpPokemonH"))}")
+            appendLine("XP treinador: ${rateText(sessionRate(session, "xpTreinador") ?: nullableLong(measured, "xpTrainerH"))}")
+            appendLine("Gold: ${rateText(sessionRate(session, "gold"))} · Abates: ${rateText(sessionRate(session, "abates") ?: nullableLong(measured, "killsH"))}")
+            appendLine("HP positivo: ${nullableLong(measured, "survivalPct")?.let { "$it% das amostras" } ?: "sem amostras"} · Sessão: ${sessionMinutes} min")
+            appendLine("Coins líquidos observados: ${nullableLong(measured, "coinsNetH")?.let { "%,d/h".format(it) } ?: "aguardando medição"}")
+            appendLine("Estes indicadores são da sessão/conta; não representam uma previsão individual de cada Hunt.")
+            appendLine()
+            appendLine("ESTIMATIVA TEÓRICA · HUNTS LIBERADAS")
             appendLine()
             for (i in 0 until minOf(pokemon.length(), 8)) {
                 val p = pokemon.optJSONObject(i) ?: continue
