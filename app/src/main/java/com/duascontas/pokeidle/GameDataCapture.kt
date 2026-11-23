@@ -42,12 +42,18 @@ object GameDataCapture {
                 try {
                     val raw = message.data ?: return@addWebMessageListener
                     if (raw.length > 2_000_000) return@addWebMessageListener
-                    val payload = JSONObject(raw)
-                    payload.put("accountId", accountId)
-                    payload.put("updatedAt", System.currentTimeMillis())
+                    // O callback do WebMessageListener roda na thread principal.
+                    // Faça somente a validação do tamanho aqui; parse e persistência ficam fora da UI.
                     val appContext = context.applicationContext
                     persistenceExecutor.execute {
-                        CaptureStore.save(appContext, accountId, payload)
+                        try {
+                            val payload = JSONObject(raw)
+                            payload.put("accountId", accountId)
+                            payload.put("updatedAt", System.currentTimeMillis())
+                            CaptureStore.save(appContext, accountId, payload)
+                        } catch (_: Exception) {
+                            // Payload inválido não pode interromper a interface nem o jogo.
+                        }
                     }
                 } catch (_: Exception) {
                     // Dados inválidos nunca podem interromper o jogo.
