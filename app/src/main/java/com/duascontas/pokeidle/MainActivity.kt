@@ -435,16 +435,31 @@ class MainActivity : Activity() {
             !DeviceCredentialStore.load(this).isNullOrBlank() || active
         val counters = if (sessionId.isNotBlank()) CaptureSession.stats(this, sessionId) else CaptureStats(0, 0, 0)
         val uploaded = sessionId.isNotBlank() && CaptureSession.isUploaded(this, sessionId)
+        val uploadError = if (sessionId.isNotBlank()) CaptureSession.uploadError(this, sessionId) else null
+        val errorCode = uploadError?.optString("code").orEmpty()
+        val httpStatus = uploadError?.optInt("httpStatus", 0) ?: 0
+        val errorMessage = when (errorCode) {
+            "unauthorized" -> "credencial inválida/expirada (401); refaça o pareamento"
+            "forbidden" -> "acesso recusado pelo Nexus (403); confira as permissões"
+            "http_retryable" -> "Nexus temporariamente indisponível (HTTP $httpStatus); tentando novamente"
+            "http_client_error" -> "requisição recusada pelo Nexus (HTTP $httpStatus)"
+            "network_error" -> "sem conexão; o Android tentará novamente"
+            "configuration_missing" -> "configure a URL HTTPS e pareie o dispositivo"
+            "unexpected_error" -> "falha inesperada durante o envio"
+            else -> ""
+        }
         val sessionStatus = when {
             active -> "gravando"
             uploaded -> "enviada ao Nexus"
+            uploadError != null -> "falha no envio"
             else -> "encerrada / aguardando envio"
         }
         rawCaptureCounters?.text = if (sessionId.isBlank()) {
             if (DeviceCredentialStore.load(this).isNullOrBlank()) "Configure o Nexus e pareie o dispositivo para ativar a captura."
             else "Pronto para iniciar. A captura inclui somente as contas que estiverem abertas."
         } else {
-            "Sessão: $sessionStatus · Eventos: ${counters.events} · Descartados: ${counters.dropped} · ${counters.bytes / 1024} KB"
+            "Sessão: $sessionStatus · Eventos: ${counters.events} · Descartados: ${counters.dropped} · ${counters.bytes / 1024} KB" +
+                if (errorMessage.isNotBlank()) "\nErro: $errorMessage" else ""
         }
     }
 
