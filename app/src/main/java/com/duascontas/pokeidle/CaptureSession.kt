@@ -206,7 +206,7 @@ object RawEventRecorder {
         } catch (_: Exception) { }
     }
 
-    fun closeSession(context: Context, accountId: Int, sessionId: String) {
+    fun closeSession(context: Context, accountId: Int, sessionId: String, onClosed: (() -> Unit)? = null) {
         if (accountId !in 1..3) return
         val app = context.applicationContext
         try {
@@ -236,6 +236,7 @@ object RawEventRecorder {
                         if (!dir.exists()) dir.mkdirs()
                         File(dir, "closed_drops_account_$accountId").writeText(System.currentTimeMillis().toString())
                     } catch (_: Exception) { }
+                    try { onClosed?.invoke() } catch (_: Exception) { }
                 }
             }
         } catch (_: RejectedExecutionException) { }
