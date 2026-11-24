@@ -79,6 +79,8 @@ open class OverlayService : Service() {
     private var hunterResult: TextView? = null
     private var hunterPreviousHeight: Int? = null
     private var web: WebView? = null
+    private var pendingRawCaptureSessionId: String? = null
+    private var pendingRawCaptureActive: Boolean? = null
     private var lp: WindowManager.LayoutParams? = null
     private var wake: PowerManager.WakeLock? = null
     private var typing = false
@@ -126,12 +128,16 @@ open class OverlayService : Service() {
                 ACTION_CAPTURE_START -> {
                     val sessionId = intent?.getStringExtra("sessionId").orEmpty()
                     if (!isTool && accountId in 1..3 && sessionId.isNotBlank()) {
+                        pendingRawCaptureSessionId = sessionId
+                        pendingRawCaptureActive = true
                         GameDataCapture.setRawCaptureSession(web, sessionId)
                     }
                 }
                 ACTION_CAPTURE_STOP -> {
                     val sessionId = intent?.getStringExtra("sessionId").orEmpty()
                     if (!isTool && accountId in 1..3 && sessionId.isNotBlank()) {
+                        pendingRawCaptureSessionId = sessionId
+                        pendingRawCaptureActive = false
                         GameDataCapture.stopRawCapture(this@OverlayService, web, accountId, sessionId)
                     }
                 }
@@ -341,6 +347,17 @@ open class OverlayService : Service() {
 
             override fun onPageCommitVisible(view: WebView, url: String) {
                 if (view !== web) return
+                val pendingSessionId = pendingRawCaptureSessionId
+                val pendingActive = pendingRawCaptureActive
+                if (!isTool && accountId in 1..3 && pendingSessionId != null && pendingActive != null) {
+                    if (pendingActive) {
+                        GameDataCapture.setRawCaptureSession(view, pendingSessionId)
+                    } else {
+                        GameDataCapture.stopRawCapture(this@OverlayService, view, accountId, pendingSessionId)
+                    }
+                    pendingRawCaptureSessionId = null
+                    pendingRawCaptureActive = null
+                }
                 rendererHealthCheck?.let { handler.removeCallbacks(it) }
                 val committedView = view
                 val healthCheck = Runnable {
