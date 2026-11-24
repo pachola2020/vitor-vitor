@@ -132,10 +132,10 @@ object GameDataCapture {
         } catch (_: Exception) { }
     }
 
-    fun stopRawCapture(context: Context, webView: WebView?, accountId: Int, sessionId: String) {
+    fun stopRawCapture(context: Context, webView: WebView?, accountId: Int, sessionId: String, onClosed: (() -> Unit)? = null) {
         if (webView == null) {
             rawSessions.remove(accountId, sessionId)
-            RawEventRecorder.closeSession(context, accountId, sessionId)
+            RawEventRecorder.closeSession(context, accountId, sessionId, onClosed)
             return
         }
         val encoded = JSONObject.quote("")
