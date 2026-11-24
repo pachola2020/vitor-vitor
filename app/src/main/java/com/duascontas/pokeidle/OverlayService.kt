@@ -237,6 +237,16 @@ open class OverlayService : Service() {
     }
 
     override fun onDestroy() {
+        if (!isTool && accountId in 1..3) {
+            val activeSessionId = CaptureSession.current(this)
+                ?.takeIf { it.optBoolean("active", false) }
+                ?.optString("sessionId")
+                ?.takeIf { it.isNotBlank() }
+            if (activeSessionId != null) {
+                // The WebView is about to be destroyed; disable the bridge and queue a drain barrier.
+                GameDataCapture.stopRawCapture(this, null, accountId, activeSessionId)
+            }
+        }
         handler.removeCallbacksAndMessages(null)
         hunterQueryExecutor.shutdownNow()
         try {
