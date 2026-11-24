@@ -22,7 +22,7 @@ class NexusUploadWorker(context: Context, parameters: WorkerParameters) : Worker
         val sessionId = inputData.getString(KEY_SESSION_ID) ?: return Result.failure()
         val baseUrl = NexusSyncSettings.baseUrl(applicationContext)
         val token = DeviceCredentialStore.load(applicationContext)
-        if (!baseUrl.startsWith("https://") || token.isNullOrBlank()) {
+        if (!NexusSyncSettings.isAllowedBaseUrl(baseUrl) || token.isNullOrBlank()) {
             CaptureSession.markUploadFailed(applicationContext, sessionId, "configuration_missing")
             return Result.failure()
         }
