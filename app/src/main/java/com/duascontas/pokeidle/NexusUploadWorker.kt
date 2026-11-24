@@ -20,7 +20,10 @@ class NexusUploadWorker(context: Context, parameters: WorkerParameters) : Worker
         val sessionId = inputData.getString(KEY_SESSION_ID) ?: return Result.failure()
         val baseUrl = NexusSyncSettings.baseUrl(applicationContext)
         val token = DeviceCredentialStore.load(applicationContext)
-        if (!baseUrl.startsWith("https://") || token.isNullOrBlank()) return Result.failure()
+        if (!baseUrl.startsWith("https://") || token.isNullOrBlank()) {
+            CaptureSession.markUploadFailed(applicationContext, sessionId, "configuration_missing")
+            return Result.failure()
+        }
 
         return try {
             awaitRawWriters(sessionId)
@@ -33,10 +36,19 @@ class NexusUploadWorker(context: Context, parameters: WorkerParameters) : Worker
             CaptureSession.cleanupUploadedPayload(applicationContext, sessionId)
             Result.success(workDataOf("uploadedRecords" to summary.records, "batches" to summary.batches))
         } catch (error: NexusHttpException) {
+            val code = when {
+                error.status == 401 -> "unauthorized"
+                error.status == 403 -> "forbidden"
+                error.retryable -> "http_retryable"
+                else -> "http_client_error"
+            }
+            CaptureSession.markUploadFailed(applicationContext, sessionId, code, error.status)
             if (error.retryable) Result.retry() else Result.failure()
         } catch (_: IOException) {
+            CaptureSession.markUploadFailed(applicationContext, sessionId, "network_error")
             Result.retry()
         } catch (_: Exception) {
+            CaptureSession.markUploadFailed(applicationContext, sessionId, "unexpected_error")
             Result.failure()
         }
     }
