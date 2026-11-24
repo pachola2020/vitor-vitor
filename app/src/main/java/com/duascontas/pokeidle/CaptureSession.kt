@@ -81,7 +81,7 @@ object CaptureSession {
         for (account in 1..3) {
             val file = File(sessionDir(context, sessionId), "stats_account_$account.json")
             try {
-                val value = AtomicFile(file).openRead().use { JSONObject(it.readBytes().toString(StandardCharsets.UTF_8)) }
+                val value = AtomicFile(file).openRead().use { JSONObject(String(it.readBytes(), StandardCharsets.UTF_8)) }
                 events += value.optLong("events", 0L)
                 dropped += value.optLong("dropped", 0L)
                 bytes += value.optLong("bytes", 0L)
@@ -191,7 +191,7 @@ object RawEventRecorder {
             val file = File(CaptureSession.sessionDir(context, sessionId), "stats_account_$accountId.json")
             val target = AtomicFile(file)
             val stats = try {
-                target.openRead().use { JSONObject(it.readBytes().toString(StandardCharsets.UTF_8)) }
+                target.openRead().use { JSONObject(String(it.readBytes(), StandardCharsets.UTF_8)) }
             } catch (_: Exception) { JSONObject() }
             stats.put("events", stats.optLong("events", 0L) + events)
             stats.put("dropped", stats.optLong("dropped", 0L) + dropped)
