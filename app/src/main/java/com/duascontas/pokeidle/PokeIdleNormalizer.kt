@@ -24,6 +24,7 @@ object PokeIdleNormalizer {
                                 val payload = envelope.optString("payload")
                                 if (payload.isBlank()) return@forEach
                                 val timestamp = envelope.optLong("timestamp", 0L)
+                                if (timestamp <= 0L) return@forEach
                                 val eventType = try {
                                     JSONObject(payload).optString("t").takeIf { it.isNotBlank() } ?: "unparsed"
                                 } catch (_: Exception) { "unparsed" }
@@ -61,7 +62,7 @@ object PokeIdleNormalizer {
                         copy(pokemon, data, key)
                     }
                     if (accountName != null) data.put("accountName", accountName)
-                    emit(record(sessionId, accountId, "pokemon", i, "pokemon", "snapshot", observedAt, data))
+                    if (observedAt > 0L) emit(record(sessionId, accountId, "pokemon", i, "pokemon", "snapshot", observedAt, data))
                 }
             }
 
@@ -82,7 +83,7 @@ object PokeIdleNormalizer {
                     copy(gameSession, resources, key)
                 }
             }
-            if (resources.length() > 0) {
+            if (resources.length() > 0 && observedAt > 0L) {
                 emit(record(sessionId, accountId, "resources", 0, "resources", "snapshot", observedAt, resources))
             }
 
@@ -137,7 +138,7 @@ object PokeIdleNormalizer {
         .put("accountId", accountId)
         .put("type", type)
         .put("source", source)
-        .put("occurredAt", Instant.ofEpochMilli(timestamp.takeIf { it > 0 } ?: System.currentTimeMillis()).toString())
+        .put("occurredAt", Instant.ofEpochMilli(timestamp).toString())
         .put("data", data)
 
     private fun copy(source: JSONObject, target: JSONObject, from: String, to: String = from) {
