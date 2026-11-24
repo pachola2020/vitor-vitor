@@ -128,6 +128,7 @@ data class CaptureStats(val events: Long, val dropped: Long, val bytes: Long)
 object RawEventRecorder {
     private val writers = ConcurrentHashMap<Int, ThreadPoolExecutor>()
     private val dropWriters = ConcurrentHashMap<Int, ExecutorService>()
+    private val statsLocks = ConcurrentHashMap<Int, Any>()
 
     private fun dropWriter(accountId: Int) = dropWriters.getOrPut(accountId) {
         Executors.newSingleThreadExecutor { task -> Thread(task, "RawCaptureDrops-$accountId").apply { isDaemon = true } }
@@ -205,6 +206,13 @@ object RawEventRecorder {
                     File(dir, "closed_account_$accountId").writeText(System.currentTimeMillis().toString())
                 } catch (_: Exception) { }
             }
+            dropWriter(accountId).execute {
+                try {
+                    val dir = CaptureSession.sessionDir(app, sessionId)
+                    if (!dir.exists()) dir.mkdirs()
+                    File(dir, "closed_drops_account_$accountId").writeText(System.currentTimeMillis().toString())
+                } catch (_: Exception) { }
+            }
         } catch (_: RejectedExecutionException) { }
     }
 
@@ -212,16 +220,19 @@ object RawEventRecorder {
         context: Context, sessionId: String, accountId: Int,
         events: Long = 0, dropped: Long = 0, bytes: Long = 0,
     ) {
-        try {
-            val file = File(CaptureSession.sessionDir(context, sessionId), "stats_account_$accountId.json")
-            val target = AtomicFile(file)
-            val stats = try {
-                target.openRead().use { JSONObject(String(it.readBytes(), StandardCharsets.UTF_8)) }
-            } catch (_: Exception) { JSONObject() }
-            stats.put("events", stats.optLong("events", 0L) + events)
-            stats.put("dropped", stats.optLong("dropped", 0L) + dropped)
-            stats.put("bytes", stats.optLong("bytes", 0L) + bytes)
-            CaptureSession.writeAtomic(target, stats.toString())
-        } catch (_: Exception) { }
+        val lock = statsLocks.getOrPut(accountId) { Any() }
+        synchronized(lock) {
+            try {
+                val file = File(CaptureSession.sessionDir(context, sessionId), "stats_account_$accountId.json")
+                val target = AtomicFile(file)
+                val stats = try {
+                    target.openRead().use { JSONObject(String(it.readBytes(), StandardCharsets.UTF_8)) }
+                } catch (_: Exception) { JSONObject() }
+                stats.put("events", stats.optLong("events", 0L) + events)
+                stats.put("dropped", stats.optLong("dropped", 0L) + dropped)
+                stats.put("bytes", stats.optLong("bytes", 0L) + bytes)
+                CaptureSession.writeAtomic(target, stats.toString())
+            } catch (_: Exception) { }
+        }
     }
 }
