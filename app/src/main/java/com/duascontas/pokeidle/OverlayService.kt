@@ -139,7 +139,12 @@ open class OverlayService : Service() {
                     if (!isTool && accountId in 1..3 && sessionId.isNotBlank()) {
                         pendingRawCaptureSessionId = sessionId
                         pendingRawCaptureActive = false
-                        GameDataCapture.stopRawCapture(this@OverlayService, web, accountId, sessionId)
+                        GameDataCapture.stopRawCapture(this@OverlayService, web, accountId, sessionId) {
+                            if (pendingRawCaptureSessionId == sessionId) {
+                                pendingRawCaptureSessionId = null
+                                pendingRawCaptureActive = null
+                            }
+                        }
                     }
                 }
                 ACTION_RUN_HUNT_ANALYSIS -> {
@@ -238,13 +243,21 @@ open class OverlayService : Service() {
 
     override fun onDestroy() {
         if (!isTool && accountId in 1..3) {
+            // Also cover the interval after the manual stop request but before its
+            // WebView callback finishes. Duplicate barriers are safe and idempotent.
+            val pendingSessionId = pendingRawCaptureSessionId
             val activeSessionId = CaptureSession.current(this)
                 ?.takeIf { it.optBoolean("active", false) }
                 ?.optString("sessionId")
                 ?.takeIf { it.isNotBlank() }
-            if (activeSessionId != null) {
-                // The WebView is about to be destroyed; disable the bridge and queue a drain barrier.
-                GameDataCapture.stopRawCapture(this, null, accountId, activeSessionId)
+            val sessionToClose = pendingSessionId ?: activeSessionId
+            if (!sessionToClose.isNullOrBlank()) {
+                GameDataCapture.stopRawCapture(this, null, accountId, sessionToClose) {
+                    if (pendingRawCaptureSessionId == sessionToClose) {
+                        pendingRawCaptureSessionId = null
+                        pendingRawCaptureActive = null
+                    }
+                }
             }
         }
         handler.removeCallbacksAndMessages(null)
