@@ -60,6 +60,8 @@ open class OverlayService : Service() {
         const val ACTION_RELOAD_ALL = "com.duascontas.pokeidle.RELOAD_ALL"
         const val ACTION_RUN_HUNT_ANALYSIS = "com.duascontas.pokeidle.RUN_HUNT_ANALYSIS"
         const val ACTION_CLOSE_ALL = "com.duascontas.pokeidle.CLOSE_ALL"
+        const val ACTION_CAPTURE_START = "com.duascontas.pokeidle.CAPTURE_START"
+        const val ACTION_CAPTURE_STOP = "com.duascontas.pokeidle.CAPTURE_STOP"
         private const val CHANNEL_ID = "janelas"
         private const val MAX_RENDERER_RECOVERY_ATTEMPTS = 4
         private val RENDERER_RECOVERY_DELAYS_MS = longArrayOf(2000L, 5000L, 15000L, 30000L)
@@ -121,6 +123,18 @@ open class OverlayService : Service() {
             when (intent?.action) {
                 ACTION_RELOAD_ALL -> reloadOrRecover()
                 ACTION_CLOSE_ALL -> stopSelf()
+                ACTION_CAPTURE_START -> {
+                    val sessionId = intent?.getStringExtra("sessionId").orEmpty()
+                    if (!isTool && accountId in 1..3 && sessionId.isNotBlank()) {
+                        GameDataCapture.setRawCaptureSession(web, sessionId)
+                    }
+                }
+                ACTION_CAPTURE_STOP -> {
+                    val sessionId = intent?.getStringExtra("sessionId").orEmpty()
+                    if (!isTool && accountId in 1..3 && sessionId.isNotBlank()) {
+                        GameDataCapture.stopRawCapture(this@OverlayService, web, accountId, sessionId)
+                    }
+                }
                 ACTION_RUN_HUNT_ANALYSIS -> {
                     val requestedAccount = intent?.getIntExtra("accountId", -1) ?: -1
                     val requestId = intent?.getLongExtra("requestId", 0L) ?: 0L
@@ -186,6 +200,8 @@ open class OverlayService : Service() {
         val filter = IntentFilter().apply {
             addAction(ACTION_RELOAD_ALL)
             addAction(ACTION_CLOSE_ALL)
+            addAction(ACTION_CAPTURE_START)
+            addAction(ACTION_CAPTURE_STOP)
             addAction(ACTION_RUN_HUNT_ANALYSIS)
         }
         if (Build.VERSION.SDK_INT >= 33) {
