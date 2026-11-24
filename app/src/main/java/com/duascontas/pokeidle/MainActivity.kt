@@ -226,6 +226,19 @@ class MainActivity : Activity() {
             }
             rawCaptureButton = captureToggle
             addView(captureToggle, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(8) })
+            addView(actionButton("Reenviar última captura", false) {
+                val last = CaptureSession.current(this@MainActivity)
+                val sessionId = last?.optString("sessionId").orEmpty()
+                if (last?.optBoolean("active", false) == true) {
+                    Toast.makeText(this@MainActivity, "Encerre a captura antes de reenviar.", Toast.LENGTH_LONG).show()
+                } else if (sessionId.isBlank() || NexusSyncSettings.baseUrl(this@MainActivity).isBlank() ||
+                    DeviceCredentialStore.load(this@MainActivity).isNullOrBlank()) {
+                    Toast.makeText(this@MainActivity, "Configure e pareie o Nexus primeiro.", Toast.LENGTH_LONG).show()
+                } else {
+                    NexusSyncScheduler.enqueue(this@MainActivity, sessionId)
+                    Toast.makeText(this@MainActivity, "Reenvio agendado. Os lotes repetidos são idempotentes.", Toast.LENGTH_LONG).show()
+                }
+            })
             val captureCounters = label("Aguardando configuração do Nexus.", 11f, MUTED)
             rawCaptureCounters = captureCounters
             addView(captureCounters)
