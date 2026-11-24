@@ -63,7 +63,7 @@ class NexusUploadWorker(context: Context, parameters: WorkerParameters) : Worker
         val started = SystemClock.elapsedRealtime()
         while (SystemClock.elapsedRealtime() - started < 15_000) {
             val openFiles = (1..3).filter { account ->
-                File(directory, "account_$account.jsonl").isFile &&
+                File(directory, "started_account_$account").exists() &&
                     (!File(directory, "closed_account_$account").exists() ||
                         !File(directory, "closed_drops_account_$account").exists())
             }
@@ -71,7 +71,7 @@ class NexusUploadWorker(context: Context, parameters: WorkerParameters) : Worker
             SystemClock.sleep(250)
         }
         val stillOpen = (1..3).filter { account ->
-            File(directory, "account_$account.jsonl").isFile &&
+            File(directory, "started_account_$account").exists() &&
                 (!File(directory, "closed_account_$account").exists() ||
                     !File(directory, "closed_drops_account_$account").exists())
         }
