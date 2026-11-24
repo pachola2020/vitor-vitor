@@ -1,7 +1,6 @@
 package com.duascontas.pokeidle
 
 import android.content.Context
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.time.Instant
