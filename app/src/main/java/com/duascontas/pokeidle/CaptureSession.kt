@@ -200,6 +200,8 @@ object RawEventRecorder {
         try {
             val dir = CaptureSession.sessionDir(context.applicationContext, sessionId)
             if (!dir.exists()) dir.mkdirs()
+            File(dir, "closed_account_$accountId").delete()
+            File(dir, "closed_drops_account_$accountId").delete()
             File(dir, "started_account_$accountId").writeText(System.currentTimeMillis().toString())
         } catch (_: Exception) { }
     }
