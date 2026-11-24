@@ -130,6 +130,7 @@ open class OverlayService : Service() {
                     if (!isTool && accountId in 1..3 && sessionId.isNotBlank()) {
                         pendingRawCaptureSessionId = sessionId
                         pendingRawCaptureActive = true
+                        RawEventRecorder.beginSession(this@OverlayService, accountId, sessionId)
                         GameDataCapture.setRawCaptureSession(web, accountId, sessionId)
                     }
                 }
