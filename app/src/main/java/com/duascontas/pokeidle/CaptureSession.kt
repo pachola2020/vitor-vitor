@@ -199,19 +199,33 @@ object RawEventRecorder {
         if (accountId !in 1..3) return
         val app = context.applicationContext
         try {
-            writer(accountId).execute {
-                try {
-                    val dir = CaptureSession.sessionDir(app, sessionId)
-                    if (!dir.exists()) dir.mkdirs()
-                    File(dir, "closed_account_$accountId").writeText(System.currentTimeMillis().toString())
-                } catch (_: Exception) { }
-            }
+            // Drain the drop queue first, then enqueue the raw-writer barrier.
+            // If the bounded raw queue is full, retry off the UI thread until a slot opens.
             dropWriter(accountId).execute {
-                try {
-                    val dir = CaptureSession.sessionDir(app, sessionId)
-                    if (!dir.exists()) dir.mkdirs()
-                    File(dir, "closed_drops_account_$accountId").writeText(System.currentTimeMillis().toString())
-                } catch (_: Exception) { }
+                var scheduled = false
+                while (!scheduled && !Thread.currentThread().isInterrupted) {
+                    try {
+                        writer(accountId).execute {
+                            try {
+                                val dir = CaptureSession.sessionDir(app, sessionId)
+                                if (!dir.exists()) dir.mkdirs()
+                                File(dir, "closed_account_$accountId").writeText(System.currentTimeMillis().toString())
+                            } catch (_: Exception) { }
+                        }
+                        scheduled = true
+                    } catch (_: RejectedExecutionException) {
+                        try { Thread.sleep(25) } catch (_: InterruptedException) {
+                            Thread.currentThread().interrupt()
+                        }
+                    }
+                }
+                if (scheduled) {
+                    try {
+                        val dir = CaptureSession.sessionDir(app, sessionId)
+                        if (!dir.exists()) dir.mkdirs()
+                        File(dir, "closed_drops_account_$accountId").writeText(System.currentTimeMillis().toString())
+                    } catch (_: Exception) { }
+                }
             }
         } catch (_: RejectedExecutionException) { }
     }
