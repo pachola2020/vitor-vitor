@@ -216,7 +216,7 @@ class MainActivity : Activity() {
                     }
                 }
             })
-            rawCaptureButton = actionButton("Iniciar captura", true) {
+            val captureToggle = actionButton("Iniciar captura", true) {
                 val current = CaptureSession.current(this@MainActivity)
                 if (current?.optBoolean("active", false) == true) {
                     stopRawCapture()
@@ -224,9 +224,11 @@ class MainActivity : Activity() {
                     startRawCapture()
                 }
             }
-            addView(rawCaptureButton, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(8) })
-            rawCaptureCounters = label("Aguardando configuração do Nexus.", 11f, MUTED)
-            addView(rawCaptureCounters)
+            rawCaptureButton = captureToggle
+            addView(captureToggle, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(8) })
+            val captureCounters = label("Aguardando configuração do Nexus.", 11f, MUTED)
+            rawCaptureCounters = captureCounters
+            addView(captureCounters)
         }
         root.addView(capturePanel)
         updateRawCaptureUi()
