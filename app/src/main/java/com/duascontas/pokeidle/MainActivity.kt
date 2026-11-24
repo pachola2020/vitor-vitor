@@ -234,6 +234,8 @@ class MainActivity : Activity() {
                 } else if (sessionId.isBlank() || NexusSyncSettings.baseUrl(this@MainActivity).isBlank() ||
                     DeviceCredentialStore.load(this@MainActivity).isNullOrBlank()) {
                     Toast.makeText(this@MainActivity, "Configure e pareie o Nexus primeiro.", Toast.LENGTH_LONG).show()
+                } else if (CaptureSession.isUploaded(this@MainActivity, sessionId)) {
+                    Toast.makeText(this@MainActivity, "Esta sessão já foi enviada e confirmada pelo Nexus.", Toast.LENGTH_LONG).show()
                 } else {
                     NexusSyncScheduler.enqueue(this@MainActivity, sessionId)
                     Toast.makeText(this@MainActivity, "Reenvio agendado. Os lotes repetidos são idempotentes.", Toast.LENGTH_LONG).show()
@@ -432,11 +434,17 @@ class MainActivity : Activity() {
         rawCaptureButton?.isEnabled = !NexusSyncSettings.baseUrl(this).isBlank() &&
             !DeviceCredentialStore.load(this).isNullOrBlank() || active
         val counters = if (sessionId.isNotBlank()) CaptureSession.stats(this, sessionId) else CaptureStats(0, 0, 0)
+        val uploaded = sessionId.isNotBlank() && CaptureSession.isUploaded(this, sessionId)
+        val sessionStatus = when {
+            active -> "gravando"
+            uploaded -> "enviada ao Nexus"
+            else -> "encerrada / aguardando envio"
+        }
         rawCaptureCounters?.text = if (sessionId.isBlank()) {
             if (DeviceCredentialStore.load(this).isNullOrBlank()) "Configure o Nexus e pareie o dispositivo para ativar a captura."
             else "Pronto para iniciar. A captura inclui somente as contas que estiverem abertas."
         } else {
-            "Sessão: ${if (active) "gravando" else "encerrada"} · Eventos: ${counters.events} · Descartados: ${counters.dropped} · ${counters.bytes / 1024} KB"
+            "Sessão: $sessionStatus · Eventos: ${counters.events} · Descartados: ${counters.dropped} · ${counters.bytes / 1024} KB"
         }
     }
 
