@@ -29,6 +29,8 @@ class NexusUploadWorker(context: Context, parameters: WorkerParameters) : Worker
                 { emit -> PokeIdleNormalizer.forEachRecord(applicationContext, sessionId, emit) },
                 { batch -> NexusApi.postJson(baseUrl, "/api/pokeidle/ingest", batch, token) },
             )
+            CaptureSession.markUploaded(applicationContext, sessionId, summary.records, summary.batches)
+            CaptureSession.cleanupUploadedPayload(applicationContext, sessionId)
             Result.success(workDataOf("uploadedRecords" to summary.records, "batches" to summary.batches))
         } catch (error: NexusHttpException) {
             if (error.retryable) Result.retry() else Result.failure()
