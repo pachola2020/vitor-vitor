@@ -18,6 +18,8 @@ import java.util.concurrent.Executors
 object GameDataCapture {
     private val persistenceExecutor = Executors.newSingleThreadExecutor()
     private const val ORIGIN = "https://pokeidle.io"
+    private const val RAW_EVENT_PREFIX = "__POKEIDLE_RAW__|"
+    private const val RAW_BINARY_PREFIX = "__POKEIDLE_BINARY__|"
 
     fun install(context: Context, webView: WebView, accountId: Int) {
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) ||
@@ -41,10 +43,26 @@ object GameDataCapture {
                 ) return@addWebMessageListener
                 try {
                     val raw = message.data ?: return@addWebMessageListener
+                    val appContext = context.applicationContext
+                    if (raw.startsWith(RAW_EVENT_PREFIX)) {
+                        val separator = raw.indexOf('|', RAW_EVENT_PREFIX.length)
+                        if (separator <= RAW_EVENT_PREFIX.length) return@addWebMessageListener
+                        val sessionId = raw.substring(RAW_EVENT_PREFIX.length, separator)
+                        val payload = raw.substring(separator + 1)
+                        if (payload.length > 2_000_000) {
+                            RawEventRecorder.recordDrop(appContext, accountId, sessionId)
+                        } else {
+                            RawEventRecorder.append(appContext, accountId, sessionId, payload)
+                        }
+                        return@addWebMessageListener
+                    }
+                    if (raw.startsWith(RAW_BINARY_PREFIX)) {
+                        RawEventRecorder.recordDrop(appContext, accountId, raw.removePrefix(RAW_BINARY_PREFIX))
+                        return@addWebMessageListener
+                    }
                     if (raw.length > 2_000_000) return@addWebMessageListener
                     // O callback do WebMessageListener roda na thread principal.
-                    // Faça somente a validação do tamanho aqui; parse e persistência ficam fora da UI.
-                    val appContext = context.applicationContext
+                    // O novo caminho bruto só separa o envelope e agenda a gravação; não interpreta o JSON do jogo.
                     persistenceExecutor.execute {
                         try {
                             var payload = JSONObject(raw)
@@ -73,7 +91,13 @@ object GameDataCapture {
                 }
             }
 
-            WebViewCompat.addDocumentStartJavaScript(webView, SCRIPT, setOf(ORIGIN))
+            val activeSession = CaptureSession.current(context)
+                ?.takeIf { it.optBoolean("active", false) }
+                ?.optString("sessionId")
+                ?.takeIf { it.isNotBlank() }
+                ?: ""
+            val script = SCRIPT.replace("__RAW_CAPTURE_SESSION__", JSONObject.quote(activeSession))
+            WebViewCompat.addDocumentStartJavaScript(webView, script, setOf(ORIGIN))
         } catch (e: Exception) {
             // Falha do mecanismo de captura não pode impedir o jogo de abrir.
             CaptureStore.save(context, accountId, JSONObject()
@@ -84,10 +108,43 @@ object GameDataCapture {
         }
     }
 
+    fun setRawCaptureSession(webView: WebView?, sessionId: String?) {
+        if (webView == null) return
+        val encoded = JSONObject.quote(sessionId ?: "")
+        try {
+            webView.evaluateJavascript(
+                "if (window.__pokeIdleSetRawCapture) window.__pokeIdleSetRawCapture($encoded);",
+                null,
+            )
+        } catch (_: Exception) { }
+    }
+
+    fun stopRawCapture(context: Context, webView: WebView?, accountId: Int, sessionId: String) {
+        if (webView == null) {
+            RawEventRecorder.closeSession(context, accountId, sessionId)
+            return
+        }
+        val encoded = JSONObject.quote("")
+        try {
+            webView.evaluateJavascript(
+                "if (window.__pokeIdleSetRawCapture) window.__pokeIdleSetRawCapture($encoded);",
+            ) {
+                RawEventRecorder.closeSession(context, accountId, sessionId)
+            }
+        } catch (_: Exception) {
+            RawEventRecorder.closeSession(context, accountId, sessionId)
+        }
+    }
+
     private val SCRIPT = """
 (() => {
   if (window.__pokeIdleAssistantCapture) return;
   window.__pokeIdleAssistantCapture = true;
+  let rawCaptureSessionId = __RAW_CAPTURE_SESSION__ || null;
+  window.__pokeIdleSetRawCapture = (sessionId) => {
+    rawCaptureSessionId = typeof sessionId === 'string' && sessionId.length > 0 ? sessionId : null;
+    return true;
+  };
   const send = (data) => {
     try {
       if (window.PokeIdleCapture && typeof window.PokeIdleCapture.postMessage === 'function') {
@@ -871,9 +928,17 @@ object GameDataCapture {
             if (socket !== ws) return;
             if (typeof event.data !== 'string') {
               diagnostics.binaryFrames++;
+              if (rawCaptureSessionId && window.PokeIdleCapture) {
+                try { window.PokeIdleCapture.postMessage("__POKEIDLE_BINARY__|" + rawCaptureSessionId); } catch (_) {}
+              }
               return;
             }
             diagnostics.textFrames++;
+            if (rawCaptureSessionId && window.PokeIdleCapture) {
+              try {
+                window.PokeIdleCapture.postMessage("__POKEIDLE_RAW__|" + rawCaptureSessionId + "|" + event.data);
+              } catch (_) {}
+            }
             let msg;
             try { msg = JSON.parse(event.data); } catch (_) { return; }
             diagnostics.jsonFrames++;
