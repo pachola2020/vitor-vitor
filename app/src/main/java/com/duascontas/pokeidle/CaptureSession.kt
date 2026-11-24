@@ -19,7 +19,7 @@ object CaptureSession {
     private fun stateFile(context: Context) = AtomicFile(File(context.filesDir, "pokeidle_capture_session.json"))
 
     fun current(context: Context): JSONObject? = try {
-        stateFile(context).openRead().use { JSONObject(it.readBytes().toString(StandardCharsets.UTF_8)) }
+        stateFile(context).openRead().use { JSONObject(String(it.readBytes(), StandardCharsets.UTF_8)) }
     } catch (_: Exception) { null }
 
     @Synchronized
