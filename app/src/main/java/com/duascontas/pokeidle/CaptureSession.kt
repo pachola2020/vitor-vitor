@@ -12,6 +12,8 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 object CaptureSession {
     private fun stateFile(context: Context) = AtomicFile(File(context.filesDir, "pokeidle_capture_session.json"))
@@ -85,6 +87,11 @@ data class CaptureStats(val events: Long, val dropped: Long, val bytes: Long)
 
 object RawEventRecorder {
     private val writers = ConcurrentHashMap<Int, ThreadPoolExecutor>()
+    private val dropWriters = ConcurrentHashMap<Int, ExecutorService>()
+
+    private fun dropWriter(accountId: Int) = dropWriters.getOrPut(accountId) {
+        Executors.newSingleThreadExecutor { task -> Thread(task, "RawCaptureDrops-$accountId").apply { isDaemon = true } }
+    }
 
     private fun writer(accountId: Int) = writers.getOrPut(accountId) {
         ThreadPoolExecutor(
@@ -125,13 +132,18 @@ object RawEventRecorder {
                 }
             }
         } catch (_: RejectedExecutionException) {
-            updateStats(app, sessionId, accountId, dropped = 1)
+            recordDrop(app, accountId, sessionId)
         }
     }
 
     fun recordDrop(context: Context, accountId: Int, sessionId: String?) {
         if (accountId !in 1..3 || sessionId.isNullOrBlank()) return
-        updateStats(context.applicationContext, sessionId, accountId, dropped = 1)
+        val app = context.applicationContext
+        try {
+            dropWriter(accountId).execute {
+                updateStats(app, sessionId, accountId, dropped = 1)
+            }
+        } catch (_: RejectedExecutionException) { }
     }
 
     fun closeSession(context: Context, accountId: Int, sessionId: String) {
