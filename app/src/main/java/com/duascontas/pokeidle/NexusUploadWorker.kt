@@ -11,8 +11,6 @@ import androidx.work.WorkManager
 import androidx.work.Worker
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
-import org.json.JSONArray
-import org.json.JSONObject
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
@@ -26,35 +24,12 @@ class NexusUploadWorker(context: Context, parameters: WorkerParameters) : Worker
 
         return try {
             awaitRawWriters(sessionId)
-            var batchIndex = 0
-            var totalRecords = 0
-            val pending = ArrayList<JSONObject>()
-            var pendingBytes = 0
-
-            fun uploadPending() {
-                if (pending.isEmpty()) return
-                val body = JSONObject()
-                    .put("schemaVersion", 1)
-                    .put("batchId", "batch_${sessionId}_${batchIndex}")
-                    .put("sessionId", sessionId)
-                    .put("records", JSONArray(pending))
-                NexusApi.postJson(baseUrl, "/api/pokeidle/ingest", body, token)
-                totalRecords += pending.size
-                batchIndex++
-                pending.clear()
-                pendingBytes = 0
-            }
-
-            PokeIdleNormalizer.forEachRecord(applicationContext, sessionId) { record ->
-                val size = record.toString().toByteArray(Charsets.UTF_8).size
-                if (pending.isNotEmpty() && (pending.size >= 100 || pendingBytes + size > 2_500_000)) {
-                    uploadPending()
-                }
-                pending.add(record)
-                pendingBytes += size
-            }
-            uploadPending()
-            Result.success(workDataOf("uploadedRecords" to totalRecords, "batches" to batchIndex))
+            val summary = NexusBatchUploader.upload(
+                sessionId,
+                { emit -> PokeIdleNormalizer.forEachRecord(applicationContext, sessionId, emit) },
+                { batch -> NexusApi.postJson(baseUrl, "/api/pokeidle/ingest", batch, token) },
+            )
+            Result.success(workDataOf("uploadedRecords" to summary.records, "batches" to summary.batches))
         } catch (error: NexusHttpException) {
             if (error.retryable) Result.retry() else Result.failure()
         } catch (_: IOException) {
