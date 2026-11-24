@@ -15,6 +15,8 @@ import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
+class CaptureDrainTimeoutException : Exception("Raw capture writers did not finish before upload.")
+
 class NexusUploadWorker(context: Context, parameters: WorkerParameters) : Worker(context, parameters) {
     override fun doWork(): Result {
         val sessionId = inputData.getString(KEY_SESSION_ID) ?: return Result.failure()
@@ -35,6 +37,9 @@ class NexusUploadWorker(context: Context, parameters: WorkerParameters) : Worker
             CaptureSession.markUploaded(applicationContext, sessionId, summary.records, summary.batches)
             CaptureSession.cleanupUploadedPayload(applicationContext, sessionId)
             Result.success(workDataOf("uploadedRecords" to summary.records, "batches" to summary.batches))
+        } catch (_: CaptureDrainTimeoutException) {
+            CaptureSession.markUploadFailed(applicationContext, sessionId, "capture_drain_timeout")
+            Result.retry()
         } catch (error: NexusHttpException) {
             val code = when {
                 error.status == 401 -> "unauthorized"
@@ -59,11 +64,18 @@ class NexusUploadWorker(context: Context, parameters: WorkerParameters) : Worker
         while (SystemClock.elapsedRealtime() - started < 15_000) {
             val openFiles = (1..3).filter { account ->
                 File(directory, "account_$account.jsonl").isFile &&
-                    !File(directory, "closed_account_$account").exists()
+                    (!File(directory, "closed_account_$account").exists() ||
+                        !File(directory, "closed_drops_account_$account").exists())
             }
             if (openFiles.isEmpty()) return
             SystemClock.sleep(250)
         }
+        val stillOpen = (1..3).filter { account ->
+            File(directory, "account_$account.jsonl").isFile &&
+                (!File(directory, "closed_account_$account").exists() ||
+                    !File(directory, "closed_drops_account_$account").exists())
+        }
+        if (stillOpen.isNotEmpty()) throw CaptureDrainTimeoutException()
     }
 
     companion object {
