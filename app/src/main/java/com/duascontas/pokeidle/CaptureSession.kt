@@ -55,6 +55,25 @@ object CaptureSession {
         writeAtomic(AtomicFile(File(dir, "account_$accountId.json")), snapshot.toString())
     }
 
+    fun markUploaded(context: Context, sessionId: String, records: Int, batches: Int) {
+        val dir = sessionDir(context, sessionId)
+        if (!dir.exists()) dir.mkdirs()
+        writeAtomic(
+            AtomicFile(File(dir, "uploaded.json")),
+            JSONObject().put("uploadedAt", System.currentTimeMillis())
+                .put("records", records).put("batches", batches).toString(),
+        )
+    }
+
+    fun isUploaded(context: Context, sessionId: String): Boolean =
+        File(sessionDir(context, sessionId), "uploaded.json").isFile
+
+    fun cleanupUploadedPayload(context: Context, sessionId: String) {
+        val dir = sessionDir(context, sessionId)
+        for (account in 1..3) File(dir, "account_$account.jsonl").delete()
+        File(dir, "snapshots").deleteRecursively()
+    }
+
     fun stats(context: Context, sessionId: String): CaptureStats {
         var events = 0L
         var dropped = 0L
