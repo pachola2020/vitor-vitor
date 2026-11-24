@@ -195,6 +195,15 @@ object RawEventRecorder {
         } catch (_: RejectedExecutionException) { }
     }
 
+    fun beginSession(context: Context, accountId: Int, sessionId: String) {
+        if (accountId !in 1..3) return
+        try {
+            val dir = CaptureSession.sessionDir(context.applicationContext, sessionId)
+            if (!dir.exists()) dir.mkdirs()
+            File(dir, "started_account_$accountId").writeText(System.currentTimeMillis().toString())
+        } catch (_: Exception) { }
+    }
+
     fun closeSession(context: Context, accountId: Int, sessionId: String) {
         if (accountId !in 1..3) return
         val app = context.applicationContext
