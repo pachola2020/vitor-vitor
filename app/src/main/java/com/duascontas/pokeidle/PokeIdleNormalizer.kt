@@ -90,7 +90,8 @@ object PokeIdleNormalizer {
             val market = snapshot.optJSONObject("market")
             val lines = market?.optJSONArray("linhas")
             if (lines != null) {
-                val marketAt = market.optLong("atualizadoEm", observedAt)
+                val marketAt = market.optLong("atualizadoEm", 0L).takeIf { it > 0L } ?: observedAt
+                if (marketAt <= 0L) continue
                 for (i in 0 until lines.length()) {
                     val line = lines.optJSONObject(i) ?: continue
                     val ficha = line.optJSONObject("ficha") ?: line.optJSONObject("pokemon")
