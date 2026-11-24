@@ -101,7 +101,10 @@ object GameDataCapture {
                 ?.optString("sessionId")
                 ?.takeIf { it.isNotBlank() }
                 ?: ""
-            if (activeSession.isNotBlank()) rawSessions[accountId] = activeSession
+            if (activeSession.isNotBlank()) {
+                RawEventRecorder.beginSession(context, accountId, activeSession)
+                rawSessions[accountId] = activeSession
+            }
             else rawSessions.remove(accountId)
             val script = SCRIPT.replace("__RAW_CAPTURE_SESSION__", JSONObject.quote(activeSession))
             WebViewCompat.addDocumentStartJavaScript(webView, script, setOf(ORIGIN))
