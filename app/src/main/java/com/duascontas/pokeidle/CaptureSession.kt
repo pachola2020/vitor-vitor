@@ -57,6 +57,7 @@ object CaptureSession {
 
     fun markUploaded(context: Context, sessionId: String, records: Int, batches: Int) {
         val dir = sessionDir(context, sessionId)
+        clearUploadError(context, sessionId)
         if (!dir.exists()) dir.mkdirs()
         writeAtomic(
             AtomicFile(File(dir, "uploaded.json")),
@@ -67,6 +68,26 @@ object CaptureSession {
 
     fun isUploaded(context: Context, sessionId: String): Boolean =
         File(sessionDir(context, sessionId), "uploaded.json").isFile
+
+    fun markUploadFailed(context: Context, sessionId: String, code: String, httpStatus: Int? = null) {
+        val dir = sessionDir(context, sessionId)
+        if (!dir.exists()) dir.mkdirs()
+        val state = JSONObject()
+            .put("failedAt", System.currentTimeMillis())
+            .put("code", code)
+        if (httpStatus != null) state.put("httpStatus", httpStatus)
+        writeAtomic(AtomicFile(File(dir, "upload_error.json")), state.toString())
+    }
+
+    fun uploadError(context: Context, sessionId: String): JSONObject? = try {
+        AtomicFile(File(sessionDir(context, sessionId), "upload_error.json"))
+            .openRead().use { JSONObject(String(it.readBytes(), StandardCharsets.UTF_8)) }
+    } catch (_: Exception) { null }
+
+    fun clearUploadError(context: Context, sessionId: String) {
+        try { AtomicFile(File(sessionDir(context, sessionId), "upload_error.json")).delete() }
+        catch (_: Exception) { }
+    }
 
     fun cleanupUploadedPayload(context: Context, sessionId: String) {
         val dir = sessionDir(context, sessionId)
