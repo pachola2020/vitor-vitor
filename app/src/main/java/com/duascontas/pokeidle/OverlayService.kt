@@ -130,7 +130,7 @@ open class OverlayService : Service() {
                     if (!isTool && accountId in 1..3 && sessionId.isNotBlank()) {
                         pendingRawCaptureSessionId = sessionId
                         pendingRawCaptureActive = true
-                        GameDataCapture.setRawCaptureSession(web, sessionId)
+                        GameDataCapture.setRawCaptureSession(web, accountId, sessionId)
                     }
                 }
                 ACTION_CAPTURE_STOP -> {
@@ -351,7 +351,7 @@ open class OverlayService : Service() {
                 val pendingActive = pendingRawCaptureActive
                 if (!isTool && accountId in 1..3 && pendingSessionId != null && pendingActive != null) {
                     if (pendingActive) {
-                        GameDataCapture.setRawCaptureSession(view, pendingSessionId)
+                        GameDataCapture.setRawCaptureSession(view, accountId, pendingSessionId)
                     } else {
                         GameDataCapture.stopRawCapture(this@OverlayService, view, accountId, pendingSessionId)
                     }
