@@ -122,6 +122,10 @@ object RawEventRecorder {
                         .put("eventType", "unparsed")
                         .put("payload", payload)
                     val bytes = (record.toString() + "\n").toByteArray(StandardCharsets.UTF_8)
+                    if (bytes.size > 3_500_000) {
+                        updateStats(app, sessionId, accountId, dropped = 1)
+                        return@execute
+                    }
                     FileOutputStream(file, true).use { output ->
                         output.write(bytes)
                         output.flush()
