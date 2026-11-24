@@ -20,22 +20,28 @@ import javax.crypto.spec.GCMParameterSpec
 object NexusSyncSettings {
     private const val PREFS = "nexus_sync_settings"
     private const val BASE_URL = "base_url"
+    // The Android bearer credential must never be sent to an arbitrary HTTPS host.
+    // Add the production Nexus origin here only after its deployment is validated.
+    private val ALLOWED_HOSTS = setOf("pokeidle-nexus-staging-pachola2020.vercel.app")
 
     fun baseUrl(context: Context): String =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(BASE_URL, "").orEmpty()
 
+    fun isAllowedBaseUrl(value: String): Boolean = try {
+        val url = URL(value.trim().trimEnd('/'))
+        url.protocol == "https" && url.host.lowercase() in ALLOWED_HOSTS &&
+            url.port == -1 && url.userInfo == null && url.query == null &&
+            url.ref == null && (url.path.isBlank() || url.path == "/")
+    } catch (_: Exception) { false }
+
     fun saveBaseUrl(context: Context, value: String): Boolean {
         val normalized = value.trim().trimEnd('/')
+        if (!isAllowedBaseUrl(normalized)) return false
         return try {
             val url = URL(normalized)
-            if (url.protocol != "https" || url.host.isBlank() || url.userInfo != null ||
-                url.query != null || url.ref != null || (url.path.isNotBlank() && url.path != "/")) {
-                false
-            } else {
-                context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                    .edit().putString(BASE_URL, url.protocol + "://" + url.authority).apply()
-                true
-            }
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().putString(BASE_URL, url.protocol + "://" + url.authority).apply()
+            true
         } catch (_: Exception) { false }
     }
 }
@@ -110,6 +116,8 @@ class NexusHttpException(val status: Int, message: String) : Exception(message) 
 
 object NexusApi {
     fun postJson(baseUrl: String, path: String, body: JSONObject, bearerToken: String? = null): JSONObject {
+        require(NexusSyncSettings.isAllowedBaseUrl(baseUrl)) { "Endereço Nexus não autorizado." }
+        require(path.startsWith("/api/") && !path.contains("..")) { "Caminho Nexus inválido." }
         val connection = (URL(baseUrl.trimEnd('/') + path).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 15_000
