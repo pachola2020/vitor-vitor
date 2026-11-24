@@ -15,6 +15,8 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.EditText
+import android.text.InputType
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -51,6 +53,14 @@ class MainActivity : Activity() {
     private var huntPollGeneration = 0
     private val mainHandler = Handler(Looper.getMainLooper())
     private val dashboardIo = Executors.newSingleThreadExecutor { task -> Thread(task, "DashboardIO").apply { isDaemon = true } }
+    private var rawCaptureButton: Button? = null
+    private var rawCaptureCounters: TextView? = null
+    private val rawCaptureRefresh = object : Runnable {
+        override fun run() {
+            updateRawCaptureUi()
+            if (!isFinishing) mainHandler.postDelayed(this, 2000)
+        }
+    }
     private val accountNames = listOf("Principal", "Alt 1", "Alt 2")
     private val accountRoles = listOf("PvP · PvE · Bosses · conteúdo geral", "Farm · Bosses · PvP ocasional", "Farm · Bosses · PvP ocasional")
 
@@ -80,9 +90,16 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         AppUpdater.resumePendingInstall(this)
+        mainHandler.removeCallbacks(rawCaptureRefresh)
+        mainHandler.post(rawCaptureRefresh)
         if (::permissionStatus.isInitialized) {
             renderDashboard()
         }
+    }
+
+    override fun onPause() {
+        mainHandler.removeCallbacks(rawCaptureRefresh)
+        super.onPause()
     }
 
     private fun renderDashboard(loadSnapshot: Boolean = true) {
@@ -140,6 +157,79 @@ class MainActivity : Activity() {
             })
         }
         root.addView(hunterHero)
+        space(14)
+
+        val capturePanel = column().apply {
+            setPadding(dp(14), dp(13), dp(14), dp(13))
+            background = roundedPanel(PANEL, 16)
+            addView(label("CAPTURA DE SESSÃO", 10f, ACCENT, true))
+            addView(label("Grava mensagens brutas das contas abertas. A normalização e o envio acontecem somente depois de encerrar.", 12f, TEXT))
+            val baseUrlInput = EditText(this@MainActivity).apply {
+                setSingleLine(true)
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+                setTextColor(TEXT)
+                setHintTextColor(MUTED)
+                hint = "https://endereco-do-nexus"
+                setText(NexusSyncSettings.baseUrl(this@MainActivity))
+                setPadding(dp(10), dp(8), dp(10), dp(8))
+                background = roundedPanel(PANEL_ALT, 10)
+            }
+            addView(baseUrlInput, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(8) })
+            addView(actionButton("Salvar endereço HTTPS do Nexus", false) {
+                val saved = NexusSyncSettings.saveBaseUrl(this@MainActivity, baseUrlInput.text.toString())
+                Toast.makeText(this@MainActivity,
+                    if (saved) "Endereço do Nexus salvo." else "Informe uma URL HTTPS válida, sem caminho.",
+                    Toast.LENGTH_LONG).show()
+                updateRawCaptureUi()
+            })
+            val pairingInput = EditText(this@MainActivity).apply {
+                setSingleLine(true)
+                inputType = InputType.TYPE_CLASS_TEXT
+                setTextColor(TEXT)
+                setHintTextColor(MUTED)
+                hint = "Cole aqui o código de pareamento gerado no Nexus"
+                setPadding(dp(10), dp(8), dp(10), dp(8))
+                background = roundedPanel(PANEL_ALT, 10)
+            }
+            addView(pairingInput, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(8) })
+            addView(actionButton("Parear este dispositivo", false) {
+                val code = pairingInput.text.toString().trim()
+                if (NexusSyncSettings.baseUrl(this@MainActivity).isBlank() || code.isBlank()) {
+                    Toast.makeText(this@MainActivity, "Configure o endereço do Nexus e informe o código.", Toast.LENGTH_LONG).show()
+                } else {
+                    pairingInput.isEnabled = false
+                    dashboardIo.execute {
+                        try {
+                            NexusApi.pair(this@MainActivity, code)
+                            mainHandler.post {
+                                pairingInput.setText("")
+                                pairingInput.isEnabled = true
+                                Toast.makeText(this@MainActivity, "Dispositivo pareado com segurança.", Toast.LENGTH_LONG).show()
+                                updateRawCaptureUi()
+                            }
+                        } catch (error: Exception) {
+                            mainHandler.post {
+                                pairingInput.isEnabled = true
+                                Toast.makeText(this@MainActivity, "Pareamento não concluído: ${error.message ?: "verifique o código e a URL"}.", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }
+                }
+            })
+            rawCaptureButton = actionButton("Iniciar captura", true) {
+                val current = CaptureSession.current(this@MainActivity)
+                if (current?.optBoolean("active", false) == true) {
+                    stopRawCapture()
+                } else {
+                    startRawCapture()
+                }
+            }
+            addView(rawCaptureButton, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(8) })
+            rawCaptureCounters = label("Aguardando configuração do Nexus.", 11f, MUTED)
+            addView(rawCaptureCounters)
+        }
+        root.addView(capturePanel)
+        updateRawCaptureUi()
         space(18)
 
         sectionTitle("CONTAS")
@@ -288,6 +378,51 @@ class MainActivity : Activity() {
         }, { message ->
             Toast.makeText(this, "Não foi possível verificar: $message", Toast.LENGTH_LONG).show()
         })
+    }
+
+    private fun startRawCapture() {
+        if (NexusSyncSettings.baseUrl(this).isBlank() || DeviceCredentialStore.load(this).isNullOrBlank()) {
+            Toast.makeText(this, "Configure o Nexus e pareie o dispositivo antes de iniciar.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val state = CaptureSession.start(this)
+        val sessionId = state.optString("sessionId")
+        sendBroadcast(Intent(OverlayService.ACTION_CAPTURE_START).setPackage(packageName).putExtra("sessionId", sessionId))
+        updateRawCaptureUi()
+        Toast.makeText(this, "Captura iniciada para as contas abertas.", Toast.LENGTH_LONG).show()
+    }
+
+    private fun stopRawCapture() {
+        val state = CaptureSession.stop(this) ?: return
+        val sessionId = state.optString("sessionId")
+        sendBroadcast(Intent(OverlayService.ACTION_CAPTURE_STOP).setPackage(packageName).putExtra("sessionId", sessionId))
+        Toast.makeText(this, "Captura encerrada. Preparando envio seguro ao Nexus…", Toast.LENGTH_LONG).show()
+        dashboardIo.execute {
+            for (account in 1..3) {
+                CaptureSession.saveSnapshot(this, sessionId, account, CaptureStore.read(this, account))
+            }
+            mainHandler.post {
+                NexusSyncScheduler.enqueue(this, sessionId)
+                updateRawCaptureUi()
+                Toast.makeText(this, "Envio agendado. O Android enviará quando houver conexão.", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun updateRawCaptureUi() {
+        val state = CaptureSession.current(this)
+        val sessionId = state?.optString("sessionId").orEmpty()
+        val active = state?.optBoolean("active", false) == true
+        rawCaptureButton?.text = if (active) "Encerrar captura" else "Iniciar captura"
+        rawCaptureButton?.isEnabled = !NexusSyncSettings.baseUrl(this).isBlank() &&
+            !DeviceCredentialStore.load(this).isNullOrBlank() || active
+        val counters = if (sessionId.isNotBlank()) CaptureSession.stats(this, sessionId) else CaptureStats(0, 0, 0)
+        rawCaptureCounters?.text = if (sessionId.isBlank()) {
+            if (DeviceCredentialStore.load(this).isNullOrBlank()) "Configure o Nexus e pareie o dispositivo para ativar a captura."
+            else "Pronto para iniciar. A captura inclui somente as contas que estiverem abertas."
+        } else {
+            "Sessão: ${if (active) "gravando" else "encerrada"} · Eventos: ${counters.events} · Descartados: ${counters.dropped} · ${counters.bytes / 1024} KB"
+        }
     }
 
     private fun captureSummary(): Pair<String, String> {
