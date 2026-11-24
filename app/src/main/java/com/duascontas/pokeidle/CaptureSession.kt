@@ -124,6 +124,10 @@ object RawEventRecorder {
     fun append(context: Context, accountId: Int, sessionId: String, payload: String) {
         if (accountId !in 1..3 || payload.isEmpty()) return
         val app = context.applicationContext
+        if (payload.length > 2_000_000) {
+            recordDrop(app, accountId, sessionId)
+            return
+        }
         try {
             writer(accountId).execute {
                 try {
