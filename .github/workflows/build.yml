@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [assistant-foundation, assistant-analysis-foundation, main, master]
+    branches: [assistant-foundation, assistant-analysis-foundation, feature/raw-capture-nexus-sync, main, master]
   workflow_dispatch:
 
 permissions:
