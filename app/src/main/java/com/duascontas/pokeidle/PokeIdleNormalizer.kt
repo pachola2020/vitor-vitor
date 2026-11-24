@@ -8,8 +8,11 @@ import java.time.Instant
 
 object PokeIdleNormalizer {
     fun forEachRecord(context: Context, sessionId: String, emit: (JSONObject) -> Unit) {
+        forEachSessionDirectory(CaptureSession.sessionDir(context, sessionId), sessionId, emit)
+    }
+
+    internal fun forEachSessionDirectory(directory: File, sessionId: String, emit: (JSONObject) -> Unit) {
         for (accountId in 1..3) {
-            val directory = CaptureSession.sessionDir(context, sessionId)
             val rawFile = File(directory, "account_$accountId.jsonl")
             if (rawFile.isFile) {
                 var index = 0
