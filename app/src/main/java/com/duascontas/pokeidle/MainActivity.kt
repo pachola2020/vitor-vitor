@@ -169,7 +169,7 @@ class MainActivity : Activity() {
                 inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
                 setTextColor(TEXT)
                 setHintTextColor(MUTED)
-                hint = "https://endereco-do-nexus"
+                hint = "https://pokeidle-nexus-staging-pachola2020.vercel.app"
                 setText(NexusSyncSettings.baseUrl(this@MainActivity))
                 setPadding(dp(10), dp(8), dp(10), dp(8))
                 background = roundedPanel(PANEL_ALT, 10)
@@ -178,7 +178,7 @@ class MainActivity : Activity() {
             addView(actionButton("Salvar endereço HTTPS do Nexus", false) {
                 val saved = NexusSyncSettings.saveBaseUrl(this@MainActivity, baseUrlInput.text.toString())
                 Toast.makeText(this@MainActivity,
-                    if (saved) "Endereço do Nexus salvo." else "Informe uma URL HTTPS válida, sem caminho.",
+                    if (saved) "Endereço do Nexus salvo." else "Informe o endereço HTTPS autorizado do Nexus de testes.",
                     Toast.LENGTH_LONG).show()
                 updateRawCaptureUi()
             })
@@ -398,7 +398,7 @@ class MainActivity : Activity() {
     }
 
     private fun startRawCapture() {
-        if (NexusSyncSettings.baseUrl(this).isBlank() || DeviceCredentialStore.load(this).isNullOrBlank()) {
+        if (!NexusSyncSettings.isAllowedBaseUrl(NexusSyncSettings.baseUrl(this)) || DeviceCredentialStore.load(this).isNullOrBlank()) {
             Toast.makeText(this, "Configure o Nexus e pareie o dispositivo antes de iniciar.", Toast.LENGTH_LONG).show()
             return
         }
@@ -431,7 +431,7 @@ class MainActivity : Activity() {
         val sessionId = state?.optString("sessionId").orEmpty()
         val active = state?.optBoolean("active", false) == true
         rawCaptureButton?.text = if (active) "Encerrar captura" else "Iniciar captura"
-        rawCaptureButton?.isEnabled = !NexusSyncSettings.baseUrl(this).isBlank() &&
+        rawCaptureButton?.isEnabled = NexusSyncSettings.isAllowedBaseUrl(NexusSyncSettings.baseUrl(this)) &&
             !DeviceCredentialStore.load(this).isNullOrBlank() || active
         val counters = if (sessionId.isNotBlank()) CaptureSession.stats(this, sessionId) else CaptureStats(0, 0, 0)
         val uploaded = sessionId.isNotBlank() && CaptureSession.isUploaded(this, sessionId)
