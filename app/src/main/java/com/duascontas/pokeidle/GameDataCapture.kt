@@ -144,11 +144,11 @@ object GameDataCapture {
                 "if (window.__pokeIdleSetRawCapture) window.__pokeIdleSetRawCapture($encoded);",
             ) {
                 rawSessions.remove(accountId, sessionId)
-                RawEventRecorder.closeSession(context, accountId, sessionId)
+                RawEventRecorder.closeSession(context, accountId, sessionId, onClosed)
             }
         } catch (_: Exception) {
             rawSessions.remove(accountId, sessionId)
-            RawEventRecorder.closeSession(context, accountId, sessionId)
+            RawEventRecorder.closeSession(context, accountId, sessionId, onClosed)
         }
     }
 
