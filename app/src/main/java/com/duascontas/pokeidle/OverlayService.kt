@@ -128,6 +128,7 @@ open class OverlayService : Service() {
                 ACTION_CAPTURE_START -> {
                     val sessionId = intent?.getStringExtra("sessionId").orEmpty()
                     if (!isTool && accountId in 1..3 && sessionId.isNotBlank()) {
+                        CaptureSession.markAccountStage(this@OverlayService, sessionId, accountId, "broadcast_received")
                         pendingRawCaptureSessionId = sessionId
                         pendingRawCaptureActive = true
                         RawEventRecorder.beginSession(this@OverlayService, accountId, sessionId)
@@ -137,9 +138,11 @@ open class OverlayService : Service() {
                 ACTION_CAPTURE_STOP -> {
                     val sessionId = intent?.getStringExtra("sessionId").orEmpty()
                     if (!isTool && accountId in 1..3 && sessionId.isNotBlank()) {
+                        CaptureSession.markAccountStage(this@OverlayService, sessionId, accountId, "stop_received")
                         pendingRawCaptureSessionId = sessionId
                         pendingRawCaptureActive = false
                         GameDataCapture.stopRawCapture(this@OverlayService, web, accountId, sessionId) {
+                            CaptureSession.markAccountStage(this@OverlayService, sessionId, accountId, "writers_closed")
                             if (pendingRawCaptureSessionId == sessionId) {
                                 pendingRawCaptureSessionId = null
                                 pendingRawCaptureActive = null
