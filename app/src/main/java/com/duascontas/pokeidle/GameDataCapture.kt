@@ -70,7 +70,9 @@ object GameDataCapture {
                 try {
                     val raw = message.data ?: return@addWebMessageListener
                     val appContext = context.applicationContext
-                    val barrierSessionId = snapshotDrainBarrierSessionId(raw, accountId)
+                    val barrierSessionId = if (raw.contains("\"_captureBarrier\"")) {
+                        snapshotDrainBarrierSessionId(raw, accountId)
+                    } else null
                     if (barrierSessionId != null) {
                         CaptureSession.markAccountStage(appContext, barrierSessionId, accountId, "snapshot_barrier_received")
                         handleSnapshotStopBarrier(appContext, accountId, barrierSessionId)
@@ -221,7 +223,7 @@ object GameDataCapture {
                 let rawBarrierSent = false;
                 let snapshotBarrierSent = false;
                 if (rawBridge) {
-                  rawBridge.postMessage(JSON.stringify({kind: "$RAW_STOP_BARRIER", accountId: $accountId, sessionId: $encodedSessionId}));
+                  rawBridge.postMessage("$RAW_STOP_BARRIER:$accountId:" + $encodedSessionId);
                   rawBarrierSent = true;
                 }
                 if (snapshotBridge) {
@@ -339,8 +341,14 @@ object GameDataCapture {
     internal fun snapshotDrainBarrierSessionId(raw: String, accountId: Int): String? =
         validatedBarrierSessionId(raw, accountId) { it.optBoolean("_captureBarrier", false) }
 
-    internal fun rawStopBarrierSessionId(raw: String, accountId: Int): String? =
-        validatedBarrierSessionId(raw, accountId) { it.optString("kind") == RAW_STOP_BARRIER }
+    internal fun rawStopBarrierSessionId(raw: String, accountId: Int): String? {
+        // Raw WebSocket frames are high-volume: use a cheap prefix check instead of parsing
+        // every frame as JSON on the WebView UI thread.
+        val prefix = "$RAW_STOP_BARRIER:$accountId:"
+        if (!raw.startsWith(prefix)) return null
+        val sessionId = raw.substring(prefix.length)
+        return if (Regex("^session_[A-Za-z0-9_-]{8,80}$").matches(sessionId)) sessionId else null
+    }
 
     private fun validatedBarrierSessionId(
         raw: String,
