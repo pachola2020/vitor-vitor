@@ -23,6 +23,7 @@ object GameDataCapture {
     private val persistenceExecutor = Executors.newSingleThreadExecutor()
     private const val ORIGIN = "https://pokeidle.io"
     private const val RAW_BINARY_MARKER = "__POKEIDLE_BINARY__"
+    private const val RAW_STOP_BARRIER = "__POKEIDLE_STOP_BARRIER__"
     private val rawSessions = ConcurrentHashMap<Int, String>()
     private val installedAccounts = ConcurrentHashMap.newKeySet<Int>()
 
@@ -52,6 +53,11 @@ object GameDataCapture {
                 try {
                     val raw = message.data ?: return@addWebMessageListener
                     val appContext = context.applicationContext
+                    val activeSessionId = rawSessions[accountId]
+                    if (isSnapshotDrainBarrier(raw, accountId, activeSessionId)) {
+                        CaptureSession.markAccountStage(appContext, activeSessionId!!, accountId, "snapshot_barrier_received")
+                        return@addWebMessageListener
+                    }
                     CaptureSession.current(appContext)?.optString("sessionId")?.takeIf { it.isNotBlank() }?.let {
                         CaptureSession.markAccountStage(appContext, it, accountId, "snapshot_message_received")
                     }
@@ -97,6 +103,10 @@ object GameDataCapture {
                 val sessionId = rawSessions[accountId] ?: return@addWebMessageListener
                 val payload = message.data ?: return@addWebMessageListener
                 val appContext = context.applicationContext
+                if (payload == RAW_STOP_BARRIER) {
+                    CaptureSession.markAccountStage(appContext, sessionId, accountId, "raw_barrier_received")
+                    return@addWebMessageListener
+                }
                 CaptureSession.markAccountStage(appContext, sessionId, accountId, "raw_message_received")
                 if (payload == RAW_BINARY_MARKER) {
                     RawEventRecorder.recordDrop(appContext, accountId, sessionId)
@@ -168,35 +178,91 @@ object GameDataCapture {
 
     fun stopRawCapture(context: Context, webView: WebView?, accountId: Int, sessionId: String, onClosed: (() -> Unit)? = null) {
         val appContext = context.applicationContext
-        fun closeOnce(completed: AtomicBoolean) {
-            if (completed.compareAndSet(false, true)) {
-                rawSessions.remove(accountId, sessionId)
+        val completed = AtomicBoolean(false)
+        val mainHandler = Handler(Looper.getMainLooper())
+        lateinit var timeout: Runnable
+
+        fun finishStop(barriersConfirmed: Boolean) {
+            if (!completed.compareAndSet(false, true)) return
+            mainHandler.removeCallbacks(timeout)
+            rawSessions.remove(accountId, sessionId)
+            try {
+                // WebMessageListener callbacks and evaluateJavascript share the WebView IPC
+                // ordering: the two JS barriers are delivered before this callback. Queueing
+                // this task now drains every earlier snapshot persistence task.
+                persistenceExecutor.execute {
+                    try {
+                        val snapshot = CaptureStore.read(appContext, accountId)
+                        if (snapshot != null) {
+                            CaptureSession.saveSnapshot(appContext, sessionId, accountId, snapshot)
+                        }
+                        CaptureSession.markAccountStage(
+                            appContext, sessionId, accountId,
+                            if (barriersConfirmed) "snapshot_writes_flushed" else "snapshot_flush_fallback",
+                        )
+                    } catch (_: Exception) {
+                        CaptureSession.markAccountStage(appContext, sessionId, accountId, "snapshot_flush_error")
+                    }
+                    // Keep the raw writer's existing queue barrier. It is scheduled only after
+                    // the snapshot executor has drained, so the worker's closed marker now
+                    // certifies both data paths have finished.
+                    RawEventRecorder.closeSession(appContext, accountId, sessionId, onClosed)
+                }
+            } catch (_: Exception) {
+                CaptureSession.markAccountStage(appContext, sessionId, accountId, "snapshot_flush_enqueue_error")
                 RawEventRecorder.closeSession(appContext, accountId, sessionId, onClosed)
             }
         }
+
+        timeout = Runnable {
+            // Renderer failure: retain the latest persisted snapshot, but explicitly mark that
+            // the JS-to-native barrier could not be confirmed.
+            finishStop(false)
+        }
         if (webView == null) {
-            closeOnce(AtomicBoolean(false))
+            finishStop(false)
             return
         }
-        val completed = AtomicBoolean(false)
-        val mainHandler = Handler(Looper.getMainLooper())
-        val timeout = Runnable {
-            // The WebView renderer may disappear or stop responding before evaluateJavascript
-            // invokes its callback. Stop accepting events and close the writer queue anyway.
-            closeOnce(completed)
-        }
+
         mainHandler.postDelayed(timeout, 5_000L)
-        val encoded = JSONObject.quote("")
+        val encodedSessionId = JSONObject.quote(sessionId)
+        val script = """
+            (() => {
+              try {
+                if (window.__pokeIdleSetRawCapture) window.__pokeIdleSetRawCapture("");
+                const rawBridge = window.PokeIdleRawCapture;
+                const snapshotBridge = window.PokeIdleCapture;
+                if (!rawBridge || !snapshotBridge) return false;
+                rawBridge.postMessage("$RAW_STOP_BARRIER");
+                snapshotBridge.postMessage(JSON.stringify({
+                  _captureBarrier: true,
+                  accountId: $accountId,
+                  sessionId: $encodedSessionId
+                }));
+                return true;
+              } catch (_) {
+                return false;
+              }
+            })()
+        """.trimIndent()
         try {
-            webView.evaluateJavascript(
-                "if (window.__pokeIdleSetRawCapture) window.__pokeIdleSetRawCapture($encoded);",
-            ) {
-                mainHandler.removeCallbacks(timeout)
-                closeOnce(completed)
+            webView.evaluateJavascript(script) { result ->
+                finishStop(result?.trim() == "true")
             }
         } catch (_: Exception) {
-            mainHandler.removeCallbacks(timeout)
-            closeOnce(completed)
+            finishStop(false)
+        }
+    }
+
+    internal fun isSnapshotDrainBarrier(raw: String, accountId: Int, sessionId: String?): Boolean {
+        if (sessionId.isNullOrBlank()) return false
+        return try {
+            val message = JSONObject(raw)
+            message.optBoolean("_captureBarrier", false) &&
+                message.optInt("accountId", -1) == accountId &&
+                message.optString("sessionId") == sessionId
+        } catch (_: Exception) {
+            false
         }
     }
 
