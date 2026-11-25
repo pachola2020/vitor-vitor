@@ -314,15 +314,24 @@ object GameDataCapture {
             val snapshot = CaptureStore.read(state.context, state.accountId)
             val snapshotSaved = snapshot != null &&
                 CaptureSession.saveSnapshot(state.context, state.sessionId, state.accountId, snapshot)
-            if (snapshot == null) {
-                CaptureSession.markAccountStage(state.context, state.sessionId, state.accountId, "snapshot_missing")
-            } else if (!snapshotSaved) {
-                CaptureSession.markAccountStage(state.context, state.sessionId, state.accountId, "snapshot_write_failed")
+            when {
+                snapshot == null -> {
+                    CaptureSession.markAccountStage(
+                        state.context, state.sessionId, state.accountId, "snapshot_missing",
+                    )
+                }
+                !snapshotSaved -> {
+                    CaptureSession.markAccountStage(
+                        state.context, state.sessionId, state.accountId, "snapshot_write_failed",
+                    )
+                }
+                else -> {
+                    CaptureSession.markAccountStage(
+                        state.context, state.sessionId, state.accountId,
+                        if (barriersConfirmed) "snapshot_writes_flushed" else "snapshot_flush_fallback",
+                    )
+                }
             }
-            CaptureSession.markAccountStage(
-                state.context, state.sessionId, state.accountId,
-                if (barriersConfirmed) "snapshot_writes_flushed" else "snapshot_flush_fallback",
-            )
         } catch (_: Exception) {
             CaptureSession.markAccountStage(state.context, state.sessionId, state.accountId, "snapshot_flush_error")
         }
