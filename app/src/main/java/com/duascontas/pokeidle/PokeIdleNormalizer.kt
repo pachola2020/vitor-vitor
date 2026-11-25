@@ -81,6 +81,26 @@ object PokeIdleNormalizer {
                     fileReadErrors++
                 }
             }
+            if (accountId in 1..2) {
+                val diagnostic = try {
+                    val file = File(directory, "diagnostics_account_$accountId.json")
+                    if (file.isFile) JSONObject(file.readText(Charsets.UTF_8)) else JSONObject()
+                } catch (_: Exception) { JSONObject() }
+                val stats = try {
+                    val file = File(directory, "stats_account_$accountId.json")
+                    if (file.isFile) JSONObject(file.readText(Charsets.UTF_8)) else JSONObject()
+                } catch (_: Exception) { JSONObject() }
+                val diagnosticData = JSONObject()
+                    .put("stages", diagnostic.optJSONObject("stages") ?: JSONObject())
+                    .put("details", diagnostic.optJSONObject("details") ?: JSONObject())
+                    .put("rawEvents", stats.optLong("events", 0L))
+                    .put("droppedEvents", stats.optLong("dropped", 0L))
+                    .put("rawBytes", stats.optLong("bytes", 0L))
+                emit(record(
+                    sessionId, accountId, "diagnostic", 0,
+                    "capture_diagnostic", "android", System.currentTimeMillis(), diagnosticData,
+                ))
+            }
             val snapshotFile = File(File(directory, "snapshots"), "account_$accountId.json")
             val snapshot = try {
                 if (snapshotFile.isFile) JSONObject(snapshotFile.readText(Charsets.UTF_8)) else null
