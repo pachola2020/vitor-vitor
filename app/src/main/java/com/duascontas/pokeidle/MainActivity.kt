@@ -237,7 +237,7 @@ class MainActivity : Activity() {
                 } else if (CaptureSession.isUploaded(this@MainActivity, sessionId)) {
                     Toast.makeText(this@MainActivity, "Esta sessão já foi enviada e confirmada pelo Nexus.", Toast.LENGTH_LONG).show()
                 } else {
-                    NexusSyncScheduler.enqueue(this@MainActivity, sessionId, replaceExisting = true)
+                    NexusSyncScheduler.enqueue(this@MainActivity, sessionId)
                     Toast.makeText(this@MainActivity, "Nova tentativa de reenvio solicitada. Os lotes repetidos são idempotentes.", Toast.LENGTH_LONG).show()
                 }
             })
