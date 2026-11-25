@@ -26,6 +26,23 @@ object GameDataCapture {
     private const val RAW_STOP_BARRIER = "__POKEIDLE_STOP_BARRIER__"
     private val rawSessions = ConcurrentHashMap<Int, String>()
     private val installedAccounts = ConcurrentHashMap.newKeySet<Int>()
+    private class CaptureStopState(
+        val context: Context,
+        val accountId: Int,
+        val sessionId: String,
+        val onClosed: (() -> Unit)?,
+        val handler: Handler,
+    ) {
+        val snapshotStarted = AtomicBoolean(false)
+        val snapshotFinished = AtomicBoolean(false)
+        val rawBarrierSeen = AtomicBoolean(false)
+        val rawCloseStarted = AtomicBoolean(false)
+        val rawFinished = AtomicBoolean(false)
+        val finalized = AtomicBoolean(false)
+        @Volatile var timeout: Runnable? = null
+    }
+    private val stopStates = ConcurrentHashMap<String, CaptureStopState>()
+    private fun stopKey(accountId: Int, sessionId: String) = "$accountId:$sessionId"
 
     fun install(context: Context, webView: WebView, accountId: Int) {
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) ||
@@ -56,6 +73,7 @@ object GameDataCapture {
                     val barrierSessionId = snapshotDrainBarrierSessionId(raw, accountId)
                     if (barrierSessionId != null) {
                         CaptureSession.markAccountStage(appContext, barrierSessionId, accountId, "snapshot_barrier_received")
+                        handleSnapshotStopBarrier(appContext, accountId, barrierSessionId)
                         return@addWebMessageListener
                     }
                     CaptureSession.current(appContext)?.optString("sessionId")?.takeIf { it.isNotBlank() }?.let {
@@ -105,6 +123,7 @@ object GameDataCapture {
                 val appContext = context.applicationContext
                 if (payload == RAW_STOP_BARRIER) {
                     CaptureSession.markAccountStage(appContext, sessionId, accountId, "raw_barrier_received")
+                    handleRawStopBarrier(appContext, accountId, sessionId)
                     return@addWebMessageListener
                 }
                 CaptureSession.markAccountStage(appContext, sessionId, accountId, "raw_message_received")
@@ -178,53 +197,15 @@ object GameDataCapture {
 
     fun stopRawCapture(context: Context, webView: WebView?, accountId: Int, sessionId: String, onClosed: (() -> Unit)? = null) {
         val appContext = context.applicationContext
-        val completed = AtomicBoolean(false)
         val mainHandler = Handler(Looper.getMainLooper())
-        lateinit var timeout: Runnable
+        val state = CaptureStopState(appContext, accountId, sessionId, onClosed, mainHandler)
+        val key = stopKey(accountId, sessionId)
+        if (stopStates.putIfAbsent(key, state) != null) return
 
-        fun finishStop(barriersConfirmed: Boolean) {
-            if (!completed.compareAndSet(false, true)) return
-            mainHandler.removeCallbacks(timeout)
-            rawSessions.remove(accountId, sessionId)
-            try {
-                // WebMessageListener callbacks and evaluateJavascript share the WebView IPC
-                // ordering: the two JS barriers are delivered before this callback. Queueing
-                // this task now drains every earlier snapshot persistence task.
-                persistenceExecutor.execute {
-                    try {
-                        val snapshot = CaptureStore.read(appContext, accountId)
-                        val snapshotSaved = snapshot != null &&
-                            CaptureSession.saveSnapshot(appContext, sessionId, accountId, snapshot)
-                        if (snapshot == null) {
-                            CaptureSession.markAccountStage(appContext, sessionId, accountId, "snapshot_missing")
-                        } else if (!snapshotSaved) {
-                            CaptureSession.markAccountStage(appContext, sessionId, accountId, "snapshot_write_failed")
-                        }
-                        CaptureSession.markAccountStage(
-                            appContext, sessionId, accountId,
-                            if (barriersConfirmed) "snapshot_writes_flushed" else "snapshot_flush_fallback",
-                        )
-                    } catch (_: Exception) {
-                        CaptureSession.markAccountStage(appContext, sessionId, accountId, "snapshot_flush_error")
-                    }
-                    // Keep the raw writer's existing queue barrier. It is scheduled only after
-                    // the snapshot executor has drained, so the worker's closed marker now
-                    // certifies both data paths have finished.
-                    RawEventRecorder.closeSession(appContext, accountId, sessionId, onClosed)
-                }
-            } catch (_: Exception) {
-                CaptureSession.markAccountStage(appContext, sessionId, accountId, "snapshot_flush_enqueue_error")
-                RawEventRecorder.closeSession(appContext, accountId, sessionId, onClosed)
-            }
-        }
-
-        timeout = Runnable {
-            // Renderer failure: retain the latest persisted snapshot, but explicitly mark that
-            // the JS-to-native barrier could not be confirmed.
-            finishStop(false)
-        }
+        val timeout = Runnable { finishStopFallback(state) }
+        state.timeout = timeout
         if (webView == null) {
-            finishStop(false)
+            finishStopFallback(state)
             return
         }
 
@@ -258,11 +239,97 @@ object GameDataCapture {
         """.trimIndent()
         try {
             webView.evaluateJavascript(script) { result ->
-                finishStop(result?.trim() == "true")
+                // Each native listener completes its own barrier. A false result means at
+                // least one bridge is unavailable, so use the bounded fallback immediately.
+                if (result?.trim() != "true") finishStopFallback(state)
             }
         } catch (_: Exception) {
-            finishStop(false)
+            finishStopFallback(state)
         }
+    }
+
+    private fun handleSnapshotStopBarrier(context: Context, accountId: Int, sessionId: String) {
+        val state = stopStates[stopKey(accountId, sessionId)] ?: return
+        if (!state.snapshotStarted.compareAndSet(false, true)) return
+        try {
+            persistenceExecutor.execute {
+                persistFinalSnapshot(state, barriersConfirmed = true)
+                state.snapshotFinished.set(true)
+                maybeStartRawClose(state)
+            }
+        } catch (_: Exception) {
+            CaptureSession.markAccountStage(context, sessionId, accountId, "snapshot_flush_enqueue_error")
+            state.snapshotFinished.set(true)
+            maybeStartRawClose(state)
+        }
+    }
+
+    private fun handleRawStopBarrier(context: Context, accountId: Int, sessionId: String) {
+        val state = stopStates[stopKey(accountId, sessionId)] ?: return
+        state.rawBarrierSeen.set(true)
+        maybeStartRawClose(state)
+    }
+
+    private fun finishStopFallback(state: CaptureStopState) {
+        if (state.snapshotStarted.compareAndSet(false, true)) {
+            try {
+                persistenceExecutor.execute {
+                    persistFinalSnapshot(state, barriersConfirmed = false)
+                    state.snapshotFinished.set(true)
+                    maybeStartRawClose(state)
+                }
+            } catch (_: Exception) {
+                CaptureSession.markAccountStage(
+                    state.context, state.sessionId, state.accountId, "snapshot_flush_enqueue_error",
+                )
+                state.snapshotFinished.set(true)
+                maybeStartRawClose(state)
+            }
+        }
+        // If a renderer or either bridge failed, stop accepting new raw events and drain
+        // everything already accepted. The raw close marker is still written after snapshot
+        // persistence, so the upload worker cannot outrun the snapshot fallback.
+        state.rawBarrierSeen.set(true)
+        maybeStartRawClose(state)
+    }
+
+    private fun persistFinalSnapshot(state: CaptureStopState, barriersConfirmed: Boolean) {
+        try {
+            val snapshot = CaptureStore.read(state.context, state.accountId)
+            val snapshotSaved = snapshot != null &&
+                CaptureSession.saveSnapshot(state.context, state.sessionId, state.accountId, snapshot)
+            if (snapshot == null) {
+                CaptureSession.markAccountStage(state.context, state.sessionId, state.accountId, "snapshot_missing")
+            } else if (!snapshotSaved) {
+                CaptureSession.markAccountStage(state.context, state.sessionId, state.accountId, "snapshot_write_failed")
+            }
+            CaptureSession.markAccountStage(
+                state.context, state.sessionId, state.accountId,
+                if (barriersConfirmed) "snapshot_writes_flushed" else "snapshot_flush_fallback",
+            )
+        } catch (_: Exception) {
+            CaptureSession.markAccountStage(state.context, state.sessionId, state.accountId, "snapshot_flush_error")
+        }
+    }
+
+    private fun maybeStartRawClose(state: CaptureStopState) {
+        if (!state.snapshotFinished.get() || !state.rawBarrierSeen.get() ||
+            !state.rawCloseStarted.compareAndSet(false, true)
+        ) return
+        rawSessions.remove(state.accountId, state.sessionId)
+        RawEventRecorder.closeSession(state.context, state.accountId, state.sessionId) {
+            state.rawFinished.set(true)
+            tryFinishStop(state)
+        }
+    }
+
+    private fun tryFinishStop(state: CaptureStopState) {
+        if (!state.snapshotFinished.get() || !state.rawFinished.get() ||
+            !state.finalized.compareAndSet(false, true)
+        ) return
+        state.timeout?.let { state.handler.removeCallbacks(it) }
+        stopStates.remove(stopKey(state.accountId, state.sessionId), state)
+        try { state.onClosed?.invoke() } catch (_: Exception) { }
     }
 
     internal fun snapshotDrainBarrierSessionId(raw: String, accountId: Int): String? {
