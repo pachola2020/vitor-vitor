@@ -24,6 +24,7 @@ object GameDataCapture {
     private const val ORIGIN = "https://pokeidle.io"
     private const val RAW_BINARY_MARKER = "__POKEIDLE_BINARY__"
     private val rawSessions = ConcurrentHashMap<Int, String>()
+    private val installedAccounts = ConcurrentHashMap.newKeySet<Int>()
 
     fun install(context: Context, webView: WebView, accountId: Int) {
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) ||
@@ -118,6 +119,7 @@ object GameDataCapture {
             else rawSessions.remove(accountId)
             val script = SCRIPT.replace("__RAW_CAPTURE_SESSION__", JSONObject.quote(activeSession))
             WebViewCompat.addDocumentStartJavaScript(webView, script, setOf(ORIGIN))
+            installedAccounts.add(accountId)
             CaptureSession.current(context)?.optString("sessionId")?.takeIf { it.isNotBlank() }?.let {
                 CaptureSession.markAccountStage(context, it, accountId, "bridge_installed")
             }
@@ -141,7 +143,13 @@ object GameDataCapture {
             rawSessions.remove(accountId)
         } else {
             rawSessions[accountId] = sessionId
-            CaptureSession.markAccountStage(webView?.context ?: return, sessionId, accountId, "raw_session_attached")
+            val appContext = webView?.context?.applicationContext
+            if (installedAccounts.contains(accountId)) {
+                CaptureSession.markAccountStage(appContext ?: return, sessionId, accountId, "bridge_installed")
+            } else {
+                CaptureSession.markAccountStage(appContext ?: return, sessionId, accountId, "bridge_not_installed")
+            }
+            CaptureSession.markAccountStage(appContext ?: return, sessionId, accountId, "raw_session_attached")
             // A WebView that was already open when capture started skips install()'s
             // beginSession path. Create its started marker here so upload waits for closeSession().
             if (previousSession != sessionId) {
