@@ -53,9 +53,9 @@ object GameDataCapture {
                 try {
                     val raw = message.data ?: return@addWebMessageListener
                     val appContext = context.applicationContext
-                    val activeSessionId = rawSessions[accountId]
-                    if (isSnapshotDrainBarrier(raw, accountId, activeSessionId)) {
-                        CaptureSession.markAccountStage(appContext, activeSessionId!!, accountId, "snapshot_barrier_received")
+                    val barrierSessionId = snapshotDrainBarrierSessionId(raw, accountId)
+                    if (barrierSessionId != null) {
+                        CaptureSession.markAccountStage(appContext, barrierSessionId, accountId, "snapshot_barrier_received")
                         return@addWebMessageListener
                     }
                     CaptureSession.current(appContext)?.optString("sessionId")?.takeIf { it.isNotBlank() }?.let {
@@ -254,15 +254,16 @@ object GameDataCapture {
         }
     }
 
-    internal fun isSnapshotDrainBarrier(raw: String, accountId: Int, sessionId: String?): Boolean {
-        if (sessionId.isNullOrBlank()) return false
+    internal fun snapshotDrainBarrierSessionId(raw: String, accountId: Int): String? {
         return try {
             val message = JSONObject(raw)
-            message.optBoolean("_captureBarrier", false) &&
+            val sessionId = message.optString("sessionId")
+            if (message.optBoolean("_captureBarrier", false) &&
                 message.optInt("accountId", -1) == accountId &&
-                message.optString("sessionId") == sessionId
+                Regex("^session_[A-Za-z0-9_-]{8,80}$").matches(sessionId)
+            ) sessionId else null
         } catch (_: Exception) {
-            false
+            null
         }
     }
 
