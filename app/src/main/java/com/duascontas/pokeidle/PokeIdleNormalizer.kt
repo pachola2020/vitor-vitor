@@ -15,9 +15,8 @@ data class PokeIdleNormalizationStats(
     val fileReadErrors: Int = 0,
 ) {
     fun toDiagnosticDetail(): String =
-        "raw_lines=$rawLinesRead emitted=$rawEventsEmitted blank=$blankLines " +
-            "missing_payload=$missingPayload invalid_timestamp=$invalidTimestamp " +
-            "malformed=$malformedLines file_errors=$fileReadErrors"
+        "lines=$rawLinesRead emitted=$rawEventsEmitted blank=$blankLines " +
+            "no_payload=$missingPayload bad_ts=$invalidTimestamp malformed=$malformedLines io=$fileReadErrors"
 }
 
 object PokeIdleNormalizer {
