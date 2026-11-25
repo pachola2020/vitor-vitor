@@ -11,6 +11,9 @@ import java.io.File
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.Executors
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
+import android.os.Handler
+import android.os.Looper
 
 /**
  * Captura passiva de mensagens recebidas pelo WebSocket oficial do jogo.
@@ -133,22 +136,36 @@ object GameDataCapture {
     }
 
     fun stopRawCapture(context: Context, webView: WebView?, accountId: Int, sessionId: String, onClosed: (() -> Unit)? = null) {
+        val appContext = context.applicationContext
+        fun closeOnce(completed: AtomicBoolean) {
+            if (completed.compareAndSet(false, true)) {
+                rawSessions.remove(accountId, sessionId)
+                RawEventRecorder.closeSession(appContext, accountId, sessionId, onClosed)
+            }
+        }
         if (webView == null) {
-            rawSessions.remove(accountId, sessionId)
-            RawEventRecorder.closeSession(context, accountId, sessionId, onClosed)
+            closeOnce(AtomicBoolean(false))
             return
         }
+        val completed = AtomicBoolean(false)
+        val mainHandler = Handler(Looper.getMainLooper())
+        val timeout = Runnable {
+            // The WebView renderer may disappear or stop responding before evaluateJavascript
+            // invokes its callback. Stop accepting events and close the writer queue anyway.
+            closeOnce(completed)
+        }
+        mainHandler.postDelayed(timeout, 5_000L)
         val encoded = JSONObject.quote("")
         try {
             webView.evaluateJavascript(
                 "if (window.__pokeIdleSetRawCapture) window.__pokeIdleSetRawCapture($encoded);",
             ) {
-                rawSessions.remove(accountId, sessionId)
-                RawEventRecorder.closeSession(context, accountId, sessionId, onClosed)
+                mainHandler.removeCallbacks(timeout)
+                closeOnce(completed)
             }
         } catch (_: Exception) {
-            rawSessions.remove(accountId, sessionId)
-            RawEventRecorder.closeSession(context, accountId, sessionId, onClosed)
+            mainHandler.removeCallbacks(timeout)
+            closeOnce(completed)
         }
     }
 
