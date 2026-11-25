@@ -415,10 +415,11 @@ class MainActivity : Activity() {
         val sessionId = state.optString("sessionId")
         sendBroadcast(Intent(OverlayService.ACTION_CAPTURE_STOP).setPackage(packageName).putExtra("sessionId", sessionId))
         Toast.makeText(this, "Captura encerrada. Preparando envio seguro ao Nexus…", Toast.LENGTH_LONG).show()
+        // Each active WebView persists its final snapshot only after its ordered
+        // JavaScript-to-native barrier has drained the snapshot persistence executor.
+        // Do not copy snapshots here: that would race the final writes and could overwrite
+        // a newer snapshot with an older CaptureStore read.
         dashboardIo.execute {
-            for (account in 1..3) {
-                CaptureSession.saveSnapshot(this, sessionId, account, CaptureStore.read(this, account))
-            }
             mainHandler.post {
                 NexusSyncScheduler.enqueue(this, sessionId)
                 updateRawCaptureUi()
