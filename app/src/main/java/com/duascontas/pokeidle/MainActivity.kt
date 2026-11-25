@@ -480,7 +480,7 @@ class MainActivity : Activity() {
             else "Pronto para iniciar. A captura inclui somente as contas que estiverem abertas."
         } else {
             "Sessão: $sessionStatus · Eventos: ${counters.events} · Descartados: ${counters.dropped} · ${counters.bytes / 1024} KB" +
-                if (errorMessage.isNotBlank()) "\nErro: $errorMessage" else if (uploadDetail.isNotBlank()) "\nDetalhe: $uploadDetail" else ""
+                if (errorMessage.isNotBlank()) "\nErro: $errorMessage" + if (uploadDetail.isNotBlank()) "\nDetalhe técnico: $uploadDetail" else "" else if (uploadDetail.isNotBlank()) "\nDetalhe: $uploadDetail" else ""
         }
     }
 
