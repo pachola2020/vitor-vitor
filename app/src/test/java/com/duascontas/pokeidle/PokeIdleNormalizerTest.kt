@@ -44,7 +44,9 @@ class PokeIdleNormalizerTest {
         val records = mutableListOf<JSONObject>()
         PokeIdleNormalizer.forEachSessionDirectory(directory, sessionId) { records.add(it) }
 
-        assertEquals(4, records.size)
+        assertEquals(6, records.size)
+        val diagnostics = records.filter { it.optString("type") == "capture_diagnostic" }
+        assertEquals(setOf(1, 2), diagnostics.map { it.getInt("accountId") }.toSet())
         val raw = records.first { it.optString("type") == "raw_event" }
         assertEquals("estado", raw.getJSONObject("data").getString("eventType"))
         assertEquals(rawPayload, raw.getJSONObject("data").getString("payload"))
@@ -95,8 +97,10 @@ class PokeIdleNormalizerTest {
             assertEquals(1, stats.invalidTimestamp)
             assertEquals(1, stats.malformedLines)
             assertEquals(0, stats.fileReadErrors)
-            assertEquals(1, emitted.size)
-            assertEquals("raw_event", emitted.single().getString("type"))
+            val rawRecords = emitted.filter { it.optString("type") == "raw_event" }
+            assertEquals(1, rawRecords.size)
+            assertEquals("raw_event", rawRecords.single().getString("type"))
+            assertEquals(2, emitted.count { it.optString("type") == "capture_diagnostic" })
         } finally {
             directory.deleteRecursively()
         }
