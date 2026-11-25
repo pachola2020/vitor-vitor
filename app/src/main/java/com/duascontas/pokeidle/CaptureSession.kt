@@ -275,11 +275,17 @@ object RawEventRecorder {
                 while (!scheduled && !Thread.currentThread().isInterrupted) {
                     try {
                         writer(accountId).execute {
+                            // This task is the true raw-writer barrier: it runs only after every
+                            // previously accepted raw event has finished writing. Publish both
+                            // close markers and notify the caller from inside this task.
                             try {
                                 val dir = CaptureSession.sessionDir(app, sessionId)
                                 if (!dir.exists()) dir.mkdirs()
-                                File(dir, "closed_account_$accountId").writeText(System.currentTimeMillis().toString())
+                                val closedAt = System.currentTimeMillis().toString()
+                                File(dir, "closed_account_$accountId").writeText(closedAt)
+                                File(dir, "closed_drops_account_$accountId").writeText(closedAt)
                             } catch (_: Exception) { }
+                            try { onClosed?.invoke() } catch (_: Exception) { }
                         }
                         scheduled = true
                     } catch (_: RejectedExecutionException) {
@@ -288,14 +294,8 @@ object RawEventRecorder {
                         }
                     }
                 }
-                if (scheduled) {
-                    try {
-                        val dir = CaptureSession.sessionDir(app, sessionId)
-                        if (!dir.exists()) dir.mkdirs()
-                        File(dir, "closed_drops_account_$accountId").writeText(System.currentTimeMillis().toString())
-                    } catch (_: Exception) { }
-                    try { onClosed?.invoke() } catch (_: Exception) { }
-                }
+                // The raw-writer task owns the close markers and callback. Merely
+                // enqueueing that task is not proof that the file queue has drained.
             }
         } catch (_: RejectedExecutionException) { }
     }
