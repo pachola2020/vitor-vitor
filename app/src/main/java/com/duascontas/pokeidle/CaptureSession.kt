@@ -49,11 +49,14 @@ object CaptureSession {
     }
 
     private val diagnosticLocks = ConcurrentHashMap<Int, Any>()
+    private val diagnosticStageCache = ConcurrentHashMap.newKeySet<String>()
 
     fun markAccountStage(
         context: Context, sessionId: String, accountId: Int, stage: String, detail: String? = null,
     ) {
         if (accountId !in 1..3 || stage.isBlank()) return
+        val cacheKey = "$sessionId:$accountId:$stage"
+        if (!diagnosticStageCache.add(cacheKey)) return
         val lock = diagnosticLocks.getOrPut(accountId) { Any() }
         synchronized(lock) {
             try {
