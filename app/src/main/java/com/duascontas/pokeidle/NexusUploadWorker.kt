@@ -15,7 +15,7 @@ import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
-class CaptureDrainTimeoutException : Exception("Raw capture writers did not finish before upload.")
+class CaptureDrainTimeoutException(val accounts: List<Int>) : Exception("Raw capture writers did not finish for accounts: ${accounts.joinToString(",")}." )
 
 class NexusUploadWorker(context: Context, parameters: WorkerParameters) : Worker(context, parameters) {
     override fun doWork(): Result {
@@ -49,8 +49,8 @@ class NexusUploadWorker(context: Context, parameters: WorkerParameters) : Worker
             CaptureSession.markUploaded(applicationContext, sessionId, summary.records, summary.batches)
             CaptureSession.cleanupUploadedPayload(applicationContext, sessionId)
             Result.success(workDataOf("uploadedRecords" to summary.records, "batches" to summary.batches))
-        } catch (_: CaptureDrainTimeoutException) {
-            CaptureSession.markUploadProgress(applicationContext, sessionId, "retrying", detail = "capture_drain_timeout")
+        } catch (error: CaptureDrainTimeoutException) {
+            CaptureSession.markUploadProgress(applicationContext, sessionId, "retrying", detail = "capture_drain_timeout_accounts_${error.accounts.joinToString("_")}")
             CaptureSession.markUploadFailed(applicationContext, sessionId, "capture_drain_timeout")
             Result.retry()
         } catch (error: NexusHttpException) {
@@ -91,7 +91,7 @@ class NexusUploadWorker(context: Context, parameters: WorkerParameters) : Worker
                 (!File(directory, "closed_account_$account").exists() ||
                     !File(directory, "closed_drops_account_$account").exists())
         }
-        if (stillOpen.isNotEmpty()) throw CaptureDrainTimeoutException()
+        if (stillOpen.isNotEmpty()) throw CaptureDrainTimeoutException(stillOpen)
     }
 
     companion object {
