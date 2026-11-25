@@ -16,7 +16,7 @@ android {
         applicationId = "com.duascontas.pokeidle.assistant.v2"
         minSdk = 28
         targetSdk = 34
-        versionCode = 48
+        versionCode = 49
         versionName = "0.7.0-hunter-prey-lab" // Hunt request diagnostics, experimental Prey A/B and dashboard polish
     }
 
