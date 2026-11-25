@@ -15,7 +15,7 @@ import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
-class CaptureDrainTimeoutException(val accounts: List<Int>) : Exception("Raw capture writers did not finish for accounts: ${accounts.joinToString(",")}." )
+class CaptureDrainTimeoutException(val accounts: List<Int>) : Exception("Raw capture writers did not finish for accounts: ${accounts.joinToString(",")}." )\n\nclass EmptyCaptureException : Exception("No records were produced from the ended capture session.")
 
 class NexusUploadWorker(context: Context, parameters: WorkerParameters) : Worker(context, parameters) {
     override fun doWork(): Result {
@@ -45,7 +45,7 @@ class NexusUploadWorker(context: Context, parameters: WorkerParameters) : Worker
                     CaptureSession.markUploadProgress(applicationContext, sessionId, "batch_accepted", sentBatches, sentRecords)
                 },
             )
-            CaptureSession.markUploadProgress(applicationContext, sessionId, "server_confirmed", summary.batches, summary.records)
+            if (summary.records <= 0 || summary.batches <= 0) throw EmptyCaptureException()\n            CaptureSession.markUploadProgress(applicationContext, sessionId, "server_confirmed", summary.batches, summary.records)
             CaptureSession.markUploaded(applicationContext, sessionId, summary.records, summary.batches)
             CaptureSession.cleanupUploadedPayload(applicationContext, sessionId)
             Result.success(workDataOf("uploadedRecords" to summary.records, "batches" to summary.batches))
@@ -53,14 +53,14 @@ class NexusUploadWorker(context: Context, parameters: WorkerParameters) : Worker
             CaptureSession.markUploadProgress(applicationContext, sessionId, "retrying", detail = "capture_drain_timeout_accounts_${error.accounts.joinToString("_")}")
             CaptureSession.markUploadFailed(applicationContext, sessionId, "capture_drain_timeout")
             Result.retry()
-        } catch (error: NexusHttpException) {
+        } catch (_: EmptyCaptureException) {\n            CaptureSession.markUploadProgress(applicationContext, sessionId, "unexpected_error", detail = "empty_capture_no_records")\n            CaptureSession.markUploadFailed(applicationContext, sessionId, "empty_capture")\n            Result.failure()\n        } catch (error: NexusHttpException) {
             val code = when {
                 error.status == 401 -> "unauthorized"
                 error.status == 403 -> "forbidden"
                 error.retryable -> "http_retryable"
                 else -> "http_client_error"
             }
-            CaptureSession.markUploadProgress(applicationContext, sessionId, "http_error", detail = "HTTP ${error.status}")
+            CaptureSession.markUploadProgress(applicationContext, sessionId, "http_error", detail = "HTTP ${error.status}: ${error.message.orEmpty().take(90)}")
             CaptureSession.markUploadFailed(applicationContext, sessionId, code, error.status)
             if (error.retryable) Result.retry() else Result.failure()
         } catch (_: IOException) {
