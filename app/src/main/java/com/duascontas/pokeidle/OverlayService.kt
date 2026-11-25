@@ -60,6 +60,8 @@ open class OverlayService : Service() {
         const val ACTION_RELOAD_ALL = "com.duascontas.pokeidle.RELOAD_ALL"
         const val ACTION_RUN_HUNT_ANALYSIS = "com.duascontas.pokeidle.RUN_HUNT_ANALYSIS"
         const val ACTION_CLOSE_ALL = "com.duascontas.pokeidle.CLOSE_ALL"
+        const val ACTION_CAPTURE_START = "com.duascontas.pokeidle.CAPTURE_START"
+        const val ACTION_CAPTURE_STOP = "com.duascontas.pokeidle.CAPTURE_STOP"
         private const val CHANNEL_ID = "janelas"
         private const val MAX_RENDERER_RECOVERY_ATTEMPTS = 4
         private val RENDERER_RECOVERY_DELAYS_MS = longArrayOf(2000L, 5000L, 15000L, 30000L)
@@ -77,6 +79,8 @@ open class OverlayService : Service() {
     private var hunterResult: TextView? = null
     private var hunterPreviousHeight: Int? = null
     private var web: WebView? = null
+    private var pendingRawCaptureSessionId: String? = null
+    private var pendingRawCaptureActive: Boolean? = null
     private var lp: WindowManager.LayoutParams? = null
     private var wake: PowerManager.WakeLock? = null
     private var typing = false
@@ -121,6 +125,31 @@ open class OverlayService : Service() {
             when (intent?.action) {
                 ACTION_RELOAD_ALL -> reloadOrRecover()
                 ACTION_CLOSE_ALL -> stopSelf()
+                ACTION_CAPTURE_START -> {
+                    val sessionId = intent?.getStringExtra("sessionId").orEmpty()
+                    if (!isTool && accountId in 1..3 && sessionId.isNotBlank()) {
+                        CaptureSession.markAccountStage(this@OverlayService, sessionId, accountId, "broadcast_received")
+                        pendingRawCaptureSessionId = sessionId
+                        pendingRawCaptureActive = true
+                        RawEventRecorder.beginSession(this@OverlayService, accountId, sessionId)
+                        GameDataCapture.setRawCaptureSession(web, accountId, sessionId)
+                    }
+                }
+                ACTION_CAPTURE_STOP -> {
+                    val sessionId = intent?.getStringExtra("sessionId").orEmpty()
+                    if (!isTool && accountId in 1..3 && sessionId.isNotBlank()) {
+                        CaptureSession.markAccountStage(this@OverlayService, sessionId, accountId, "stop_received")
+                        pendingRawCaptureSessionId = sessionId
+                        pendingRawCaptureActive = false
+                        GameDataCapture.stopRawCapture(this@OverlayService, web, accountId, sessionId) {
+                            CaptureSession.markAccountStage(this@OverlayService, sessionId, accountId, "writers_closed")
+                            if (pendingRawCaptureSessionId == sessionId) {
+                                pendingRawCaptureSessionId = null
+                                pendingRawCaptureActive = null
+                            }
+                        }
+                    }
+                }
                 ACTION_RUN_HUNT_ANALYSIS -> {
                     val requestedAccount = intent?.getIntExtra("accountId", -1) ?: -1
                     val requestId = intent?.getLongExtra("requestId", 0L) ?: 0L
@@ -186,6 +215,8 @@ open class OverlayService : Service() {
         val filter = IntentFilter().apply {
             addAction(ACTION_RELOAD_ALL)
             addAction(ACTION_CLOSE_ALL)
+            addAction(ACTION_CAPTURE_START)
+            addAction(ACTION_CAPTURE_STOP)
             addAction(ACTION_RUN_HUNT_ANALYSIS)
         }
         if (Build.VERSION.SDK_INT >= 33) {
@@ -214,6 +245,24 @@ open class OverlayService : Service() {
     }
 
     override fun onDestroy() {
+        if (!isTool && accountId in 1..3) {
+            // Also cover the interval after the manual stop request but before its
+            // WebView callback finishes. Duplicate barriers are safe and idempotent.
+            val pendingSessionId = pendingRawCaptureSessionId
+            val activeSessionId = CaptureSession.current(this)
+                ?.takeIf { it.optBoolean("active", false) }
+                ?.optString("sessionId")
+                ?.takeIf { it.isNotBlank() }
+            val sessionToClose = pendingSessionId ?: activeSessionId
+            if (!sessionToClose.isNullOrBlank()) {
+                GameDataCapture.stopRawCapture(this, null, accountId, sessionToClose) {
+                    if (pendingRawCaptureSessionId == sessionToClose) {
+                        pendingRawCaptureSessionId = null
+                        pendingRawCaptureActive = null
+                    }
+                }
+            }
+        }
         handler.removeCallbacksAndMessages(null)
         hunterQueryExecutor.shutdownNow()
         try {
@@ -325,6 +374,17 @@ open class OverlayService : Service() {
 
             override fun onPageCommitVisible(view: WebView, url: String) {
                 if (view !== web) return
+                val pendingSessionId = pendingRawCaptureSessionId
+                val pendingActive = pendingRawCaptureActive
+                if (!isTool && accountId in 1..3 && pendingSessionId != null && pendingActive != null) {
+                    if (pendingActive) {
+                        GameDataCapture.setRawCaptureSession(view, accountId, pendingSessionId)
+                    } else {
+                        GameDataCapture.stopRawCapture(this@OverlayService, view, accountId, pendingSessionId)
+                    }
+                    pendingRawCaptureSessionId = null
+                    pendingRawCaptureActive = null
+                }
                 rendererHealthCheck?.let { handler.removeCallbacks(it) }
                 val committedView = view
                 val healthCheck = Runnable {

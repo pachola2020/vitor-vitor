@@ -15,6 +15,8 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.EditText
+import android.text.InputType
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -51,6 +53,14 @@ class MainActivity : Activity() {
     private var huntPollGeneration = 0
     private val mainHandler = Handler(Looper.getMainLooper())
     private val dashboardIo = Executors.newSingleThreadExecutor { task -> Thread(task, "DashboardIO").apply { isDaemon = true } }
+    private var rawCaptureButton: Button? = null
+    private var rawCaptureCounters: TextView? = null
+    private val rawCaptureRefresh = object : Runnable {
+        override fun run() {
+            updateRawCaptureUi()
+            if (!isFinishing) mainHandler.postDelayed(this, 2000)
+        }
+    }
     private val accountNames = listOf("Principal", "Alt 1", "Alt 2")
     private val accountRoles = listOf("PvP · PvE · Bosses · conteúdo geral", "Farm · Bosses · PvP ocasional", "Farm · Bosses · PvP ocasional")
 
@@ -80,9 +90,16 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         AppUpdater.resumePendingInstall(this)
+        mainHandler.removeCallbacks(rawCaptureRefresh)
+        mainHandler.post(rawCaptureRefresh)
         if (::permissionStatus.isInitialized) {
             renderDashboard()
         }
+    }
+
+    override fun onPause() {
+        mainHandler.removeCallbacks(rawCaptureRefresh)
+        super.onPause()
     }
 
     private fun renderDashboard(loadSnapshot: Boolean = true) {
@@ -140,6 +157,96 @@ class MainActivity : Activity() {
             })
         }
         root.addView(hunterHero)
+        space(14)
+
+        val capturePanel = column().apply {
+            setPadding(dp(14), dp(13), dp(14), dp(13))
+            background = roundedPanel(PANEL, 16)
+            addView(label("CAPTURA DE SESSÃO", 10f, ACCENT, true))
+            addView(label("Grava mensagens brutas das contas abertas. A normalização e o envio acontecem somente depois de encerrar.", 12f, TEXT))
+            val baseUrlInput = EditText(this@MainActivity).apply {
+                setSingleLine(true)
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+                setTextColor(TEXT)
+                setHintTextColor(MUTED)
+                hint = "https://pokeidle-nexus-staging-pachola2020.vercel.app"
+                setText(NexusSyncSettings.baseUrl(this@MainActivity))
+                setPadding(dp(10), dp(8), dp(10), dp(8))
+                background = roundedPanel(PANEL_ALT, 10)
+            }
+            addView(baseUrlInput, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(8) })
+            addView(actionButton("Salvar endereço HTTPS do Nexus", false) {
+                val saved = NexusSyncSettings.saveBaseUrl(this@MainActivity, baseUrlInput.text.toString())
+                Toast.makeText(this@MainActivity,
+                    if (saved) "Endereço do Nexus salvo." else "Informe o endereço HTTPS autorizado do Nexus de testes.",
+                    Toast.LENGTH_LONG).show()
+                updateRawCaptureUi()
+            })
+            val pairingInput = EditText(this@MainActivity).apply {
+                setSingleLine(true)
+                inputType = InputType.TYPE_CLASS_TEXT
+                setTextColor(TEXT)
+                setHintTextColor(MUTED)
+                hint = "Cole aqui o código de pareamento gerado no Nexus"
+                setPadding(dp(10), dp(8), dp(10), dp(8))
+                background = roundedPanel(PANEL_ALT, 10)
+            }
+            addView(pairingInput, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(8) })
+            addView(actionButton("Parear este dispositivo", false) {
+                val code = pairingInput.text.toString().trim()
+                if (NexusSyncSettings.baseUrl(this@MainActivity).isBlank() || code.isBlank()) {
+                    Toast.makeText(this@MainActivity, "Configure o endereço do Nexus e informe o código.", Toast.LENGTH_LONG).show()
+                } else {
+                    pairingInput.isEnabled = false
+                    dashboardIo.execute {
+                        try {
+                            NexusApi.pair(this@MainActivity, code)
+                            mainHandler.post {
+                                pairingInput.setText("")
+                                pairingInput.isEnabled = true
+                                Toast.makeText(this@MainActivity, "Dispositivo pareado com segurança.", Toast.LENGTH_LONG).show()
+                                updateRawCaptureUi()
+                            }
+                        } catch (error: Exception) {
+                            mainHandler.post {
+                                pairingInput.isEnabled = true
+                                Toast.makeText(this@MainActivity, "Pareamento não concluído: ${error.message ?: "verifique o código e a URL"}.", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }
+                }
+            })
+            val captureToggle = actionButton("Iniciar captura", true) {
+                val current = CaptureSession.current(this@MainActivity)
+                if (current?.optBoolean("active", false) == true) {
+                    stopRawCapture()
+                } else {
+                    startRawCapture()
+                }
+            }
+            rawCaptureButton = captureToggle
+            addView(captureToggle, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(8) })
+            addView(actionButton("Reenviar última captura", false) {
+                val last = CaptureSession.current(this@MainActivity)
+                val sessionId = last?.optString("sessionId").orEmpty()
+                if (last?.optBoolean("active", false) == true) {
+                    Toast.makeText(this@MainActivity, "Encerre a captura antes de reenviar.", Toast.LENGTH_LONG).show()
+                } else if (sessionId.isBlank() || NexusSyncSettings.baseUrl(this@MainActivity).isBlank() ||
+                    DeviceCredentialStore.load(this@MainActivity).isNullOrBlank()) {
+                    Toast.makeText(this@MainActivity, "Configure e pareie o Nexus primeiro.", Toast.LENGTH_LONG).show()
+                } else if (CaptureSession.isUploaded(this@MainActivity, sessionId)) {
+                    Toast.makeText(this@MainActivity, "Esta sessão já foi enviada e confirmada pelo Nexus.", Toast.LENGTH_LONG).show()
+                } else {
+                    NexusSyncScheduler.enqueue(this@MainActivity, sessionId)
+                    Toast.makeText(this@MainActivity, "Nova tentativa de reenvio solicitada. Os lotes repetidos são idempotentes.", Toast.LENGTH_LONG).show()
+                }
+            })
+            val captureCounters = label("Aguardando configuração do Nexus.", 11f, MUTED)
+            rawCaptureCounters = captureCounters
+            addView(captureCounters)
+        }
+        root.addView(capturePanel)
+        updateRawCaptureUi()
         space(18)
 
         sectionTitle("CONTAS")
@@ -288,6 +395,96 @@ class MainActivity : Activity() {
         }, { message ->
             Toast.makeText(this, "Não foi possível verificar: $message", Toast.LENGTH_LONG).show()
         })
+    }
+
+    private fun startRawCapture() {
+        if (!NexusSyncSettings.isAllowedBaseUrl(NexusSyncSettings.baseUrl(this)) || DeviceCredentialStore.load(this).isNullOrBlank()) {
+            Toast.makeText(this, "Configure o Nexus e pareie o dispositivo antes de iniciar.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val state = CaptureSession.start(this)
+        val sessionId = state.optString("sessionId")
+        for (account in 1..2) CaptureSession.markAccountStage(this, sessionId, account, "command_sent")
+        sendBroadcast(Intent(OverlayService.ACTION_CAPTURE_START).setPackage(packageName).putExtra("sessionId", sessionId))
+        updateRawCaptureUi()
+        Toast.makeText(this, "Captura iniciada para as contas abertas.", Toast.LENGTH_LONG).show()
+    }
+
+    private fun stopRawCapture() {
+        val state = CaptureSession.stop(this) ?: return
+        val sessionId = state.optString("sessionId")
+        sendBroadcast(Intent(OverlayService.ACTION_CAPTURE_STOP).setPackage(packageName).putExtra("sessionId", sessionId))
+        Toast.makeText(this, "Captura encerrada. Preparando envio seguro ao Nexus…", Toast.LENGTH_LONG).show()
+        // Each active WebView persists its final snapshot only after its ordered
+        // JavaScript-to-native barrier has drained the snapshot persistence executor.
+        // Do not copy snapshots here: that would race the final writes and could overwrite
+        // a newer snapshot with an older CaptureStore read.
+        dashboardIo.execute {
+            mainHandler.post {
+                NexusSyncScheduler.enqueue(this, sessionId)
+                updateRawCaptureUi()
+                Toast.makeText(this, "Envio agendado. O Android enviará quando houver conexão.", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun updateRawCaptureUi() {
+        val state = CaptureSession.current(this)
+        val sessionId = state?.optString("sessionId").orEmpty()
+        val active = state?.optBoolean("active", false) == true
+        rawCaptureButton?.text = if (active) "Encerrar captura" else "Iniciar captura"
+        rawCaptureButton?.isEnabled = NexusSyncSettings.isAllowedBaseUrl(NexusSyncSettings.baseUrl(this)) &&
+            !DeviceCredentialStore.load(this).isNullOrBlank() || active
+        val counters = if (sessionId.isNotBlank()) CaptureSession.stats(this, sessionId) else CaptureStats(0, 0, 0)
+        val uploaded = sessionId.isNotBlank() && CaptureSession.isUploaded(this, sessionId)
+        val uploadError = if (sessionId.isNotBlank()) CaptureSession.uploadError(this, sessionId) else null
+        val uploadProgress = if (sessionId.isNotBlank()) CaptureSession.uploadProgress(this, sessionId) else null
+        val uploadStage = uploadProgress?.optString("stage").orEmpty()
+        val uploadBatches = uploadProgress?.optInt("batches", 0) ?: 0
+        val uploadRecords = uploadProgress?.optInt("records", 0) ?: 0
+        val uploadDetail = uploadProgress?.optString("detail").orEmpty()
+        val errorCode = uploadError?.optString("code").orEmpty()
+        val httpStatus = uploadError?.optInt("httpStatus", 0) ?: 0
+        val errorMessage = when (errorCode) {
+            "unauthorized" -> "credencial inválida/expirada (401); refaça o pareamento"
+            "forbidden" -> "acesso recusado pelo Nexus (403); confira as permissões"
+            "http_retryable" -> "Nexus temporariamente indisponível (HTTP $httpStatus); tentando novamente"
+            "http_client_error" -> "requisição recusada pelo Nexus (HTTP $httpStatus)"
+            "network_error" -> "sem conexão; o Android tentará novamente"
+            "configuration_missing" -> "configure a URL HTTPS e pareie o dispositivo"
+            "capture_drain_timeout" -> "aguardando a finalização segura dos arquivos da captura; o envio será repetido"
+            "empty_capture" -> "nenhum registro foi gerado; a sessão não será marcada como enviada"
+            "unexpected_error" -> "falha inesperada durante o envio"
+            else -> ""
+        }
+        val stageLabel = when (uploadStage) {
+            "queued" -> "na fila do Android"
+            "worker_started" -> "worker iniciado"
+            "waiting_for_capture_files" -> "aguardando arquivos"
+            "normalizing_records" -> "preparando registros"
+            "sending_batch" -> "enviando lote"
+            "batch_accepted" -> "lotes confirmados: $uploadBatches · registros: $uploadRecords"
+            "server_confirmed" -> "Nexus confirmou o envio"
+            "retrying" -> "aguardando nova tentativa"
+            "network_retry" -> "sem rede; nova tentativa agendada"
+            "http_error" -> "servidor recusou a requisição"
+            "unexpected_error" -> "erro interno no worker"
+            else -> ""
+        }
+        val sessionStatus = when {
+            active -> "gravando"
+            uploaded -> "enviada ao Nexus"
+            uploadError != null -> "falha no envio"
+            stageLabel.isNotBlank() -> stageLabel
+            else -> "encerrada / aguardando envio"
+        }
+        rawCaptureCounters?.text = if (sessionId.isBlank()) {
+            if (DeviceCredentialStore.load(this).isNullOrBlank()) "Configure o Nexus e pareie o dispositivo para ativar a captura."
+            else "Pronto para iniciar. A captura inclui somente as contas que estiverem abertas."
+        } else {
+            "Sessão: $sessionStatus · Eventos: ${counters.events} · Descartados: ${counters.dropped} · ${counters.bytes / 1024} KB" +
+                if (errorMessage.isNotBlank()) "\nErro: $errorMessage" + if (uploadDetail.isNotBlank()) "\nDetalhe técnico: $uploadDetail" else "" else if (uploadDetail.isNotBlank()) "\nDetalhe: $uploadDetail" else ""
+        }
     }
 
     private fun captureSummary(): Pair<String, String> {

@@ -10,6 +10,10 @@ import org.json.JSONObject
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.Executors
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
+import android.os.Handler
+import android.os.Looper
 
 /**
  * Captura passiva de mensagens recebidas pelo WebSocket oficial do jogo.
@@ -18,11 +22,35 @@ import java.util.concurrent.Executors
 object GameDataCapture {
     private val persistenceExecutor = Executors.newSingleThreadExecutor()
     private const val ORIGIN = "https://pokeidle.io"
+    private const val RAW_BINARY_MARKER = "__POKEIDLE_BINARY__"
+    private const val RAW_STOP_BARRIER = "__POKEIDLE_STOP_BARRIER__"
+    private val rawSessions = ConcurrentHashMap<Int, String>()
+    private val installedAccounts = ConcurrentHashMap.newKeySet<Int>()
+    private class CaptureStopState(
+        val context: Context,
+        val accountId: Int,
+        val sessionId: String,
+        val onClosed: (() -> Unit)?,
+        val handler: Handler,
+    ) {
+        val snapshotStarted = AtomicBoolean(false)
+        val snapshotFinished = AtomicBoolean(false)
+        val rawBarrierSeen = AtomicBoolean(false)
+        val rawCloseStarted = AtomicBoolean(false)
+        val rawFinished = AtomicBoolean(false)
+        val finalized = AtomicBoolean(false)
+        @Volatile var timeout: Runnable? = null
+    }
+    private val stopStates = ConcurrentHashMap<String, CaptureStopState>()
+    private fun stopKey(accountId: Int, sessionId: String) = "$accountId:$sessionId"
 
     fun install(context: Context, webView: WebView, accountId: Int) {
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) ||
             !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)
         ) {
+            CaptureSession.current(context)?.optString("sessionId")?.takeIf { it.isNotBlank() }?.let {
+                CaptureSession.markAccountStage(context, it, accountId, "bridge_unsupported")
+            }
             CaptureStore.save(context, accountId, JSONObject()
                 .put("accountId", accountId)
                 .put("status", "unsupported")
@@ -41,10 +69,21 @@ object GameDataCapture {
                 ) return@addWebMessageListener
                 try {
                     val raw = message.data ?: return@addWebMessageListener
+                    val appContext = context.applicationContext
+                    val barrierSessionId = if (raw.contains("\"_captureBarrier\"")) {
+                        snapshotDrainBarrierSessionId(raw, accountId)
+                    } else null
+                    if (barrierSessionId != null) {
+                        CaptureSession.markAccountStage(appContext, barrierSessionId, accountId, "snapshot_barrier_received")
+                        handleSnapshotStopBarrier(appContext, accountId, barrierSessionId)
+                        return@addWebMessageListener
+                    }
+                    CaptureSession.current(appContext)?.optString("sessionId")?.takeIf { it.isNotBlank() }?.let {
+                        CaptureSession.markAccountStage(appContext, it, accountId, "snapshot_message_received")
+                    }
                     if (raw.length > 2_000_000) return@addWebMessageListener
                     // O callback do WebMessageListener roda na thread principal.
-                    // Faça somente a validação do tamanho aqui; parse e persistência ficam fora da UI.
-                    val appContext = context.applicationContext
+                    // O novo caminho bruto só separa o envelope e agenda a gravação; não interpreta o JSON do jogo.
                     persistenceExecutor.execute {
                         try {
                             var payload = JSONObject(raw)
@@ -73,8 +112,53 @@ object GameDataCapture {
                 }
             }
 
-            WebViewCompat.addDocumentStartJavaScript(webView, SCRIPT, setOf(ORIGIN))
+            WebViewCompat.addWebMessageListener(
+                webView,
+                "PokeIdleRawCapture",
+                setOf(ORIGIN)
+            ) { _, message: WebMessageCompat, sourceOrigin, isMainFrame, _ ->
+                if (!isMainFrame || sourceOrigin.scheme != "https" ||
+                    sourceOrigin.host != "pokeidle.io" || sourceOrigin.port != -1
+                ) return@addWebMessageListener
+                val payload = message.data ?: return@addWebMessageListener
+                val appContext = context.applicationContext
+                val barrierSessionId = rawStopBarrierSessionId(payload, accountId)
+                if (barrierSessionId != null) {
+                    CaptureSession.markAccountStage(appContext, barrierSessionId, accountId, "raw_barrier_received")
+                    handleRawStopBarrier(accountId, barrierSessionId)
+                    return@addWebMessageListener
+                }
+                val sessionId = rawSessions[accountId] ?: return@addWebMessageListener
+                CaptureSession.markAccountStage(appContext, sessionId, accountId, "raw_message_received")
+                if (payload == RAW_BINARY_MARKER) {
+                    RawEventRecorder.recordDrop(appContext, accountId, sessionId)
+                } else {
+                    // A string is immutable; pass its reference to the bounded writer queue.
+                    // No envelope concatenation, indexOf, substring or payload copy on the UI thread.
+                    RawEventRecorder.append(appContext, accountId, sessionId, payload)
+                }
+            }
+
+            val activeSession = CaptureSession.current(context)
+                ?.takeIf { it.optBoolean("active", false) }
+                ?.optString("sessionId")
+                ?.takeIf { it.isNotBlank() }
+                ?: ""
+            if (activeSession.isNotBlank()) {
+                RawEventRecorder.beginSession(context, accountId, activeSession)
+                rawSessions[accountId] = activeSession
+            }
+            else rawSessions.remove(accountId)
+            val script = SCRIPT.replace("__RAW_CAPTURE_SESSION__", JSONObject.quote(activeSession))
+            WebViewCompat.addDocumentStartJavaScript(webView, script, setOf(ORIGIN))
+            installedAccounts.add(accountId)
+            CaptureSession.current(context)?.optString("sessionId")?.takeIf { it.isNotBlank() }?.let {
+                CaptureSession.markAccountStage(context, it, accountId, "bridge_installed")
+            }
         } catch (e: Exception) {
+            CaptureSession.current(context)?.optString("sessionId")?.takeIf { it.isNotBlank() }?.let {
+                CaptureSession.markAccountStage(context, it, accountId, "bridge_install_error", e.javaClass.simpleName)
+            }
             // Falha do mecanismo de captura não pode impedir o jogo de abrir.
             CaptureStore.save(context, accountId, JSONObject()
                 .put("accountId", accountId)
@@ -84,10 +168,233 @@ object GameDataCapture {
         }
     }
 
+    fun setRawCaptureSession(webView: WebView?, accountId: Int, sessionId: String?) {
+        if (accountId !in 1..3) return
+        val previousSession = rawSessions[accountId]
+        if (sessionId.isNullOrBlank()) {
+            rawSessions.remove(accountId)
+        } else {
+            rawSessions[accountId] = sessionId
+            val appContext = webView?.context?.applicationContext
+            if (installedAccounts.contains(accountId)) {
+                CaptureSession.markAccountStage(appContext ?: return, sessionId, accountId, "bridge_installed")
+            } else {
+                CaptureSession.markAccountStage(appContext ?: return, sessionId, accountId, "bridge_not_installed")
+            }
+            CaptureSession.markAccountStage(appContext ?: return, sessionId, accountId, "raw_session_attached")
+            // A WebView that was already open when capture started skips install()'s
+            // beginSession path. Create its started marker here so upload waits for closeSession().
+            if (previousSession != sessionId) {
+                webView?.context?.let { RawEventRecorder.beginSession(it, accountId, sessionId) }
+            }
+        }
+        if (webView == null) return
+        val encoded = JSONObject.quote(sessionId ?: "")
+        try {
+            webView.evaluateJavascript(
+                "if (window.__pokeIdleSetRawCapture) window.__pokeIdleSetRawCapture($encoded);",
+                null,
+            )
+        } catch (_: Exception) { }
+    }
+
+    fun stopRawCapture(context: Context, webView: WebView?, accountId: Int, sessionId: String, onClosed: (() -> Unit)? = null) {
+        val appContext = context.applicationContext
+        val mainHandler = Handler(Looper.getMainLooper())
+        val state = CaptureStopState(appContext, accountId, sessionId, onClosed, mainHandler)
+        val key = stopKey(accountId, sessionId)
+        if (stopStates.putIfAbsent(key, state) != null) return
+
+        val timeout = Runnable { finishStopFallback(state) }
+        state.timeout = timeout
+        if (webView == null) {
+            finishStopFallback(state)
+            return
+        }
+
+        mainHandler.postDelayed(timeout, 5_000L)
+        val encodedSessionId = JSONObject.quote(sessionId)
+        val script = """
+            (() => {
+              try {
+                if (window.__pokeIdleSetRawCapture) window.__pokeIdleSetRawCapture("");
+                const rawBridge = window.PokeIdleRawCapture;
+                const snapshotBridge = window.PokeIdleCapture;
+                let rawBarrierSent = false;
+                let snapshotBarrierSent = false;
+                if (rawBridge) {
+                  rawBridge.postMessage("$RAW_STOP_BARRIER:$accountId:" + $encodedSessionId);
+                  rawBarrierSent = true;
+                }
+                if (snapshotBridge) {
+                  snapshotBridge.postMessage(JSON.stringify({
+                    _captureBarrier: true,
+                    accountId: $accountId,
+                    sessionId: $encodedSessionId
+                  }));
+                  snapshotBarrierSent = true;
+                }
+                return (rawBarrierSent ? 1 : 0) | (snapshotBarrierSent ? 2 : 0);
+              } catch (_) {
+                return false;
+              }
+            })()
+        """.trimIndent()
+        try {
+            webView.evaluateJavascript(script) { result ->
+                // Each native listener completes its own barrier. Fall back only for the
+                // bridge that could not be posted; the other bridge may still be draining.
+                val barrierFlags = result?.trim()?.toIntOrNull()
+                if (barrierFlags == null) {
+                    finishStopFallback(state)
+                } else {
+                    if ((barrierFlags and 1) == 0) finishRawBarrierFallback(state)
+                    if ((barrierFlags and 2) == 0) finishSnapshotBarrierFallback(state)
+                }
+            }
+        } catch (_: Exception) {
+            finishStopFallback(state)
+        }
+    }
+
+    private fun handleSnapshotStopBarrier(context: Context, accountId: Int, sessionId: String) {
+        val state = stopStates[stopKey(accountId, sessionId)] ?: return
+        if (!state.snapshotStarted.compareAndSet(false, true)) return
+        try {
+            persistenceExecutor.execute {
+                persistFinalSnapshot(state, barriersConfirmed = true)
+                state.snapshotFinished.set(true)
+                maybeStartRawClose(state)
+            }
+        } catch (_: Exception) {
+            CaptureSession.markAccountStage(context, sessionId, accountId, "snapshot_flush_enqueue_error")
+            state.snapshotFinished.set(true)
+            maybeStartRawClose(state)
+        }
+    }
+
+    private fun handleRawStopBarrier(accountId: Int, sessionId: String) {
+        val state = stopStates[stopKey(accountId, sessionId)] ?: return
+        state.rawBarrierSeen.set(true)
+        rawSessions.remove(accountId, sessionId)
+        maybeStartRawClose(state)
+    }
+
+    private fun finishStopFallback(state: CaptureStopState) {
+        finishRawBarrierFallback(state)
+        finishSnapshotBarrierFallback(state)
+    }
+
+    private fun finishRawBarrierFallback(state: CaptureStopState) {
+        // Stop accepting additional messages even if the renderer never returns its barrier.
+        rawSessions.remove(state.accountId, state.sessionId)
+        state.rawBarrierSeen.set(true)
+        maybeStartRawClose(state)
+    }
+
+    private fun finishSnapshotBarrierFallback(state: CaptureStopState) {
+        if (!state.snapshotStarted.compareAndSet(false, true)) return
+        try {
+            persistenceExecutor.execute {
+                persistFinalSnapshot(state, barriersConfirmed = false)
+                state.snapshotFinished.set(true)
+                maybeStartRawClose(state)
+            }
+        } catch (_: Exception) {
+            CaptureSession.markAccountStage(
+                state.context, state.sessionId, state.accountId, "snapshot_flush_enqueue_error",
+            )
+            state.snapshotFinished.set(true)
+            maybeStartRawClose(state)
+        }
+    }
+
+    private fun persistFinalSnapshot(state: CaptureStopState, barriersConfirmed: Boolean) {
+        try {
+            val snapshot = CaptureStore.read(state.context, state.accountId)
+            val snapshotSaved = snapshot != null &&
+                CaptureSession.saveSnapshot(state.context, state.sessionId, state.accountId, snapshot)
+            when {
+                snapshot == null -> {
+                    CaptureSession.markAccountStage(
+                        state.context, state.sessionId, state.accountId, "snapshot_missing",
+                    )
+                }
+                !snapshotSaved -> {
+                    CaptureSession.markAccountStage(
+                        state.context, state.sessionId, state.accountId, "snapshot_write_failed",
+                    )
+                }
+                else -> {
+                    CaptureSession.markAccountStage(
+                        state.context, state.sessionId, state.accountId,
+                        if (barriersConfirmed) "snapshot_writes_flushed" else "snapshot_flush_fallback",
+                    )
+                }
+            }
+        } catch (_: Exception) {
+            CaptureSession.markAccountStage(state.context, state.sessionId, state.accountId, "snapshot_flush_error")
+        }
+    }
+
+    private fun maybeStartRawClose(state: CaptureStopState) {
+        if (!state.snapshotFinished.get() || !state.rawBarrierSeen.get() ||
+            !state.rawCloseStarted.compareAndSet(false, true)
+        ) return
+        rawSessions.remove(state.accountId, state.sessionId)
+        RawEventRecorder.closeSession(state.context, state.accountId, state.sessionId) {
+            state.rawFinished.set(true)
+            tryFinishStop(state)
+        }
+    }
+
+    private fun tryFinishStop(state: CaptureStopState) {
+        if (!state.snapshotFinished.get() || !state.rawFinished.get() ||
+            !state.finalized.compareAndSet(false, true)
+        ) return
+        state.timeout?.let { state.handler.removeCallbacks(it) }
+        stopStates.remove(stopKey(state.accountId, state.sessionId), state)
+        try { state.onClosed?.invoke() } catch (_: Exception) { }
+    }
+
+    internal fun snapshotDrainBarrierSessionId(raw: String, accountId: Int): String? =
+        validatedBarrierSessionId(raw, accountId) { it.optBoolean("_captureBarrier", false) }
+
+    internal fun rawStopBarrierSessionId(raw: String, accountId: Int): String? {
+        // Raw WebSocket frames are high-volume: use a cheap prefix check instead of parsing
+        // every frame as JSON on the WebView UI thread.
+        val prefix = "$RAW_STOP_BARRIER:$accountId:"
+        if (!raw.startsWith(prefix)) return null
+        val sessionId = raw.substring(prefix.length)
+        return if (Regex("^session_[A-Za-z0-9_-]{8,80}$").matches(sessionId)) sessionId else null
+    }
+
+    private fun validatedBarrierSessionId(
+        raw: String,
+        accountId: Int,
+        markerMatches: (JSONObject) -> Boolean,
+    ): String? {
+        return try {
+            val message = JSONObject(raw)
+            val sessionId = message.optString("sessionId")
+            if (markerMatches(message) &&
+                message.optInt("accountId", -1) == accountId &&
+                Regex("^session_[A-Za-z0-9_-]{8,80}$").matches(sessionId)
+            ) sessionId else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private val SCRIPT = """
 (() => {
   if (window.__pokeIdleAssistantCapture) return;
   window.__pokeIdleAssistantCapture = true;
+  let rawCaptureSessionId = __RAW_CAPTURE_SESSION__ || null;
+  window.__pokeIdleSetRawCapture = (sessionId) => {
+    rawCaptureSessionId = typeof sessionId === 'string' && sessionId.length > 0 ? sessionId : null;
+    return true;
+  };
   const send = (data) => {
     try {
       if (window.PokeIdleCapture && typeof window.PokeIdleCapture.postMessage === 'function') {
@@ -871,9 +1178,17 @@ object GameDataCapture {
             if (socket !== ws) return;
             if (typeof event.data !== 'string') {
               diagnostics.binaryFrames++;
+              if (rawCaptureSessionId && window.PokeIdleRawCapture) {
+                try { window.PokeIdleRawCapture.postMessage("__POKEIDLE_BINARY__"); } catch (_) {}
+              }
               return;
             }
             diagnostics.textFrames++;
+            if (rawCaptureSessionId && window.PokeIdleRawCapture) {
+              try {
+                window.PokeIdleRawCapture.postMessage(event.data);
+              } catch (_) {}
+            }
             let msg;
             try { msg = JSON.parse(event.data); } catch (_) { return; }
             diagnostics.jsonFrames++;
@@ -930,7 +1245,7 @@ object GameDataCapture {
               merge(msg.estado && typeof msg.estado === 'object' && !Array.isArray(msg.estado) ? msg.estado : {});
               previousBallCounts = readBallCounts();
               publish('welcome', true);
-            } else if (msg.t === 'estado' && state) {
+            } else if (msg.t === 'estado') {
               diagnostics.estado++;
               merge(msg.estado && typeof msg.estado === 'object' && !Array.isArray(msg.estado) ? msg.estado : null);
               trackBallUse();
