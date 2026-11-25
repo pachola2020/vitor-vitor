@@ -6,6 +6,7 @@ import android.webkit.WebView
 import androidx.webkit.WebMessageCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.nio.charset.StandardCharsets
@@ -234,7 +235,7 @@ object GameDataCapture {
                   }));
                   snapshotBarrierSent = true;
                 }
-                return rawBarrierSent && snapshotBarrierSent;
+                return JSON.stringify([rawBarrierSent, snapshotBarrierSent]);
               } catch (_) {
                 return false;
               }
@@ -242,9 +243,15 @@ object GameDataCapture {
         """.trimIndent()
         try {
             webView.evaluateJavascript(script) { result ->
-                // Each native listener completes its own barrier. A false result means at
-                // least one bridge is unavailable, so use the bounded fallback immediately.
-                if (result?.trim() != "true") finishStopFallback(state)
+                // Each native listener completes its own barrier. Fall back only for the
+                // bridge that could not be posted; the other bridge may still be draining.
+                val barriers = try { result?.let { JSONArray(it) } } catch (_: Exception) { null }
+                if (barriers == null) {
+                    finishStopFallback(state)
+                } else {
+                    if (!barriers.optBoolean(0, false)) finishRawBarrierFallback(state)
+                    if (!barriers.optBoolean(1, false)) finishSnapshotBarrierFallback(state)
+                }
             }
         } catch (_: Exception) {
             finishStopFallback(state)
@@ -275,28 +282,32 @@ object GameDataCapture {
     }
 
     private fun finishStopFallback(state: CaptureStopState) {
+        finishRawBarrierFallback(state)
+        finishSnapshotBarrierFallback(state)
+    }
+
+    private fun finishRawBarrierFallback(state: CaptureStopState) {
         // Stop accepting additional messages even if the renderer never returns its barrier.
         rawSessions.remove(state.accountId, state.sessionId)
-        if (state.snapshotStarted.compareAndSet(false, true)) {
-            try {
-                persistenceExecutor.execute {
-                    persistFinalSnapshot(state, barriersConfirmed = false)
-                    state.snapshotFinished.set(true)
-                    maybeStartRawClose(state)
-                }
-            } catch (_: Exception) {
-                CaptureSession.markAccountStage(
-                    state.context, state.sessionId, state.accountId, "snapshot_flush_enqueue_error",
-                )
+        state.rawBarrierSeen.set(true)
+        maybeStartRawClose(state)
+    }
+
+    private fun finishSnapshotBarrierFallback(state: CaptureStopState) {
+        if (!state.snapshotStarted.compareAndSet(false, true)) return
+        try {
+            persistenceExecutor.execute {
+                persistFinalSnapshot(state, barriersConfirmed = false)
                 state.snapshotFinished.set(true)
                 maybeStartRawClose(state)
             }
+        } catch (_: Exception) {
+            CaptureSession.markAccountStage(
+                state.context, state.sessionId, state.accountId, "snapshot_flush_enqueue_error",
+            )
+            state.snapshotFinished.set(true)
+            maybeStartRawClose(state)
         }
-        // If a renderer or either bridge failed, stop accepting new raw events and drain
-        // everything already accepted. The raw close marker is still written after snapshot
-        // persistence, so the upload worker cannot outrun the snapshot fallback.
-        state.rawBarrierSeen.set(true)
-        maybeStartRawClose(state)
     }
 
     private fun persistFinalSnapshot(state: CaptureStopState, barriersConfirmed: Boolean) {
