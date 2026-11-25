@@ -116,6 +116,13 @@ class PokeIdleNormalizerTest {
 
         assertEquals(sessionId, GameDataCapture.snapshotDrainBarrierSessionId(valid, 2))
         assertNull(GameDataCapture.snapshotDrainBarrierSessionId(valid, 1))
+        val rawBarrier = JSONObject()
+            .put("kind", "__POKEIDLE_STOP_BARRIER__")
+            .put("accountId", 2)
+            .put("sessionId", sessionId)
+            .toString()
+        assertEquals(sessionId, GameDataCapture.rawStopBarrierSessionId(rawBarrier, 2))
+        assertNull(GameDataCapture.rawStopBarrierSessionId(rawBarrier, 1))
         assertNull(GameDataCapture.snapshotDrainBarrierSessionId(
             JSONObject().put("_captureBarrier", true).put("accountId", 2)
                 .put("sessionId", "not-a-session").toString(),
@@ -126,6 +133,7 @@ class PokeIdleNormalizerTest {
             2,
         ))
         assertNull(GameDataCapture.snapshotDrainBarrierSessionId("{malformed", 2))
+        assertNull(GameDataCapture.rawStopBarrierSessionId("{malformed", 2))
     }
 
 }
