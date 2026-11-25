@@ -84,11 +84,11 @@ object CaptureSession {
             .openRead().use { JSONObject(String(it.readBytes(), StandardCharsets.UTF_8)) }
     } catch (_: Exception) { null }
 
-    fun saveSnapshot(context: Context, sessionId: String, accountId: Int, snapshot: JSONObject?) {
-        if (accountId !in 1..3 || snapshot == null) return
+    fun saveSnapshot(context: Context, sessionId: String, accountId: Int, snapshot: JSONObject?): Boolean {
+        if (accountId !in 1..3 || snapshot == null) return false
         val dir = File(sessionDir(context, sessionId), "snapshots")
-        if (!dir.exists() && !dir.mkdirs()) return
-        writeAtomic(AtomicFile(File(dir, "account_$accountId.json")), snapshot.toString())
+        if (!dir.exists() && !dir.mkdirs()) return false
+        return writeAtomic(AtomicFile(File(dir, "account_$accountId.json")), snapshot.toString())
     }
 
     fun markUploaded(context: Context, sessionId: String, records: Int, batches: Int) {
@@ -167,14 +167,16 @@ object CaptureSession {
         return CaptureStats(events, dropped, bytes)
     }
 
-    internal fun writeAtomic(target: AtomicFile, value: String) {
+    internal fun writeAtomic(target: AtomicFile, value: String): Boolean {
         var stream: FileOutputStream? = null
-        try {
+        return try {
             stream = target.startWrite()
             stream.write(value.toByteArray(StandardCharsets.UTF_8))
             target.finishWrite(stream)
+            true
         } catch (_: Exception) {
             if (stream != null) target.failWrite(stream)
+            false
         }
     }
 }
