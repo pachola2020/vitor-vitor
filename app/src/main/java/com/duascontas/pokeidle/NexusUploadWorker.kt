@@ -67,7 +67,7 @@ class NexusUploadWorker(context: Context, parameters: WorkerParameters) : Worker
             CaptureSession.markUploadProgress(applicationContext, sessionId, "network_retry", detail = "network_error")
             CaptureSession.markUploadFailed(applicationContext, sessionId, "network_error")
             Result.retry()
-        } catch (_: Exception) {
+        } catch (error: Exception) {
             CaptureSession.markUploadProgress(applicationContext, sessionId, "unexpected_error", detail = error.javaClass.simpleName + ": " + (error.message ?: ""))
             CaptureSession.markUploadFailed(applicationContext, sessionId, "unexpected_error")
             Result.failure()
