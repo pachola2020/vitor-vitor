@@ -5,12 +5,38 @@ import org.json.JSONObject
 import java.io.File
 import java.time.Instant
 
-object PokeIdleNormalizer {
-    fun forEachRecord(context: Context, sessionId: String, emit: (JSONObject) -> Unit) {
-        forEachSessionDirectory(CaptureSession.sessionDir(context, sessionId), sessionId, emit)
-    }
+data class PokeIdleNormalizationStats(
+    val rawLinesRead: Int = 0,
+    val rawEventsEmitted: Int = 0,
+    val blankLines: Int = 0,
+    val missingPayload: Int = 0,
+    val invalidTimestamp: Int = 0,
+    val malformedLines: Int = 0,
+    val fileReadErrors: Int = 0,
+) {
+    fun toDiagnosticDetail(): String =
+        "raw_lines=$rawLinesRead emitted=$rawEventsEmitted blank=$blankLines " +
+            "missing_payload=$missingPayload invalid_timestamp=$invalidTimestamp " +
+            "malformed=$malformedLines file_errors=$fileReadErrors"
+}
 
-    internal fun forEachSessionDirectory(directory: File, sessionId: String, emit: (JSONObject) -> Unit) {
+object PokeIdleNormalizer {
+    fun forEachRecord(context: Context, sessionId: String, emit: (JSONObject) -> Unit): PokeIdleNormalizationStats =
+        forEachSessionDirectory(CaptureSession.sessionDir(context, sessionId), sessionId, emit)
+
+    internal fun forEachSessionDirectory(
+        directory: File,
+        sessionId: String,
+        emit: (JSONObject) -> Unit,
+    ): PokeIdleNormalizationStats {
+        var rawLinesRead = 0
+        var rawEventsEmitted = 0
+        var blankLines = 0
+        var missingPayload = 0
+        var invalidTimestamp = 0
+        var malformedLines = 0
+        var fileReadErrors = 0
+
         for (accountId in 1..3) {
             val rawFile = File(directory, "account_$accountId.jsonl")
             if (rawFile.isFile) {
@@ -18,13 +44,23 @@ object PokeIdleNormalizer {
                 try {
                     rawFile.bufferedReader(Charsets.UTF_8).useLines { lines ->
                         lines.forEach { line ->
-                            if (line.isBlank()) return@forEach
+                            rawLinesRead++
+                            if (line.isBlank()) {
+                                blankLines++
+                                return@forEach
+                            }
                             try {
                                 val envelope = JSONObject(line)
                                 val payload = envelope.optString("payload")
-                                if (payload.isBlank()) return@forEach
+                                if (payload.isBlank()) {
+                                    missingPayload++
+                                    return@forEach
+                                }
                                 val timestamp = envelope.optLong("timestamp", 0L)
-                                if (timestamp <= 0L) return@forEach
+                                if (timestamp <= 0L) {
+                                    invalidTimestamp++
+                                    return@forEach
+                                }
                                 val eventType = try {
                                     JSONObject(payload).optString("t").takeIf { it.isNotBlank() } ?: "unparsed"
                                 } catch (_: Exception) { "unparsed" }
@@ -35,10 +71,16 @@ object PokeIdleNormalizer {
                                     sessionId, accountId, "raw", index++,
                                     "raw_event", "websocket", timestamp, data,
                                 ))
-                            } catch (_: Exception) { index++ }
+                                rawEventsEmitted++
+                            } catch (_: Exception) {
+                                malformedLines++
+                                index++
+                            }
                         }
                     }
-                } catch (_: Exception) { }
+                } catch (_: Exception) {
+                    fileReadErrors++
+                }
             }
             val snapshotFile = File(File(directory, "snapshots"), "account_$accountId.json")
             val snapshot = try {
@@ -88,12 +130,12 @@ object PokeIdleNormalizer {
             }
 
             val market = snapshot.optJSONObject("market")
-            val lines = market?.optJSONArray("linhas")
-            if (lines != null) {
+            val marketLines = market?.optJSONArray("linhas")
+            if (marketLines != null) {
                 val marketAt = market.optLong("atualizadoEm", 0L).takeIf { it > 0L } ?: observedAt
                 if (marketAt <= 0L) continue
-                for (i in 0 until lines.length()) {
-                    val line = lines.optJSONObject(i) ?: continue
+                for (i in 0 until marketLines.length()) {
+                    val line = marketLines.optJSONObject(i) ?: continue
                     val ficha = line.optJSONObject("ficha") ?: line.optJSONObject("pokemon")
                     val data = JSONObject()
                     copy(line, data, "id", "offerId")
@@ -129,6 +171,10 @@ object PokeIdleNormalizer {
                 }
             }
         }
+        return PokeIdleNormalizationStats(
+            rawLinesRead, rawEventsEmitted, blankLines, missingPayload,
+            invalidTimestamp, malformedLines, fileReadErrors,
+        )
     }
 
     private fun record(
