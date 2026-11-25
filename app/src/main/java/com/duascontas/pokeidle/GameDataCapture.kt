@@ -193,8 +193,12 @@ object GameDataCapture {
                 persistenceExecutor.execute {
                     try {
                         val snapshot = CaptureStore.read(appContext, accountId)
-                        if (snapshot != null) {
+                        val snapshotSaved = snapshot != null &&
                             CaptureSession.saveSnapshot(appContext, sessionId, accountId, snapshot)
+                        if (snapshot == null) {
+                            CaptureSession.markAccountStage(appContext, sessionId, accountId, "snapshot_missing")
+                        } else if (!snapshotSaved) {
+                            CaptureSession.markAccountStage(appContext, sessionId, accountId, "snapshot_write_failed")
                         }
                         CaptureSession.markAccountStage(
                             appContext, sessionId, accountId,
@@ -232,14 +236,21 @@ object GameDataCapture {
                 if (window.__pokeIdleSetRawCapture) window.__pokeIdleSetRawCapture("");
                 const rawBridge = window.PokeIdleRawCapture;
                 const snapshotBridge = window.PokeIdleCapture;
-                if (!rawBridge || !snapshotBridge) return false;
-                rawBridge.postMessage("$RAW_STOP_BARRIER");
-                snapshotBridge.postMessage(JSON.stringify({
-                  _captureBarrier: true,
-                  accountId: $accountId,
-                  sessionId: $encodedSessionId
-                }));
-                return true;
+                let rawBarrierSent = false;
+                let snapshotBarrierSent = false;
+                if (rawBridge) {
+                  rawBridge.postMessage("$RAW_STOP_BARRIER");
+                  rawBarrierSent = true;
+                }
+                if (snapshotBridge) {
+                  snapshotBridge.postMessage(JSON.stringify({
+                    _captureBarrier: true,
+                    accountId: $accountId,
+                    sessionId: $encodedSessionId
+                  }));
+                  snapshotBarrierSent = true;
+                }
+                return rawBarrierSent && snapshotBarrierSent;
               } catch (_) {
                 return false;
               }
