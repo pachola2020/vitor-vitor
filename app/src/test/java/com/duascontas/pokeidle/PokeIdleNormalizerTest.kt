@@ -105,4 +105,27 @@ class PokeIdleNormalizerTest {
             directory.deleteRecursively()
         }
     }
+    @Test
+    fun recognizesOnlyWellFormedSnapshotDrainBarriersForTheMatchingAccount() {
+        val sessionId = "session_1234567890"
+        val valid = JSONObject()
+            .put("_captureBarrier", true)
+            .put("accountId", 2)
+            .put("sessionId", sessionId)
+            .toString()
+
+        assertEquals(sessionId, GameDataCapture.snapshotDrainBarrierSessionId(valid, 2))
+        assertNull(GameDataCapture.snapshotDrainBarrierSessionId(valid, 1))
+        assertNull(GameDataCapture.snapshotDrainBarrierSessionId(
+            JSONObject().put("_captureBarrier", true).put("accountId", 2)
+                .put("sessionId", "not-a-session").toString(),
+            2,
+        ))
+        assertNull(GameDataCapture.snapshotDrainBarrierSessionId(
+            JSONObject().put("kind", "state").put("level", 20).toString(),
+            2,
+        ))
+        assertNull(GameDataCapture.snapshotDrainBarrierSessionId("{malformed", 2))
+    }
+
 }
