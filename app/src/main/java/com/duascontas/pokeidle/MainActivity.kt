@@ -436,6 +436,11 @@ class MainActivity : Activity() {
         val counters = if (sessionId.isNotBlank()) CaptureSession.stats(this, sessionId) else CaptureStats(0, 0, 0)
         val uploaded = sessionId.isNotBlank() && CaptureSession.isUploaded(this, sessionId)
         val uploadError = if (sessionId.isNotBlank()) CaptureSession.uploadError(this, sessionId) else null
+        val uploadProgress = if (sessionId.isNotBlank()) CaptureSession.uploadProgress(this, sessionId) else null
+        val uploadStage = uploadProgress?.optString("stage").orEmpty()
+        val uploadBatches = uploadProgress?.optInt("batches", 0) ?: 0
+        val uploadRecords = uploadProgress?.optInt("records", 0) ?: 0
+        val uploadDetail = uploadProgress?.optString("detail").orEmpty()
         val errorCode = uploadError?.optString("code").orEmpty()
         val httpStatus = uploadError?.optInt("httpStatus", 0) ?: 0
         val errorMessage = when (errorCode) {
@@ -449,10 +454,25 @@ class MainActivity : Activity() {
             "unexpected_error" -> "falha inesperada durante o envio"
             else -> ""
         }
+        val stageLabel = when (uploadStage) {
+            "queued" -> "na fila do Android"
+            "worker_started" -> "worker iniciado"
+            "waiting_for_capture_files" -> "aguardando arquivos"
+            "normalizing_records" -> "preparando registros"
+            "sending_batch" -> "enviando lote"
+            "batch_accepted" -> "lotes confirmados: $uploadBatches · registros: $uploadRecords"
+            "server_confirmed" -> "Nexus confirmou o envio"
+            "retrying" -> "aguardando nova tentativa"
+            "network_retry" -> "sem rede; nova tentativa agendada"
+            "http_error" -> "servidor recusou a requisição"
+            "unexpected_error" -> "erro interno no worker"
+            else -> ""
+        }
         val sessionStatus = when {
             active -> "gravando"
             uploaded -> "enviada ao Nexus"
             uploadError != null -> "falha no envio"
+            stageLabel.isNotBlank() -> stageLabel
             else -> "encerrada / aguardando envio"
         }
         rawCaptureCounters?.text = if (sessionId.isBlank()) {
@@ -460,7 +480,7 @@ class MainActivity : Activity() {
             else "Pronto para iniciar. A captura inclui somente as contas que estiverem abertas."
         } else {
             "Sessão: $sessionStatus · Eventos: ${counters.events} · Descartados: ${counters.dropped} · ${counters.bytes / 1024} KB" +
-                if (errorMessage.isNotBlank()) "\nErro: $errorMessage" else ""
+                if (errorMessage.isNotBlank()) "\nErro: $errorMessage" else if (uploadDetail.isNotBlank()) "\nDetalhe: $uploadDetail" else ""
         }
     }
 
