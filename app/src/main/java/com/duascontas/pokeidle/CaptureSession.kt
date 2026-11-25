@@ -69,6 +69,26 @@ object CaptureSession {
     fun isUploaded(context: Context, sessionId: String): Boolean =
         File(sessionDir(context, sessionId), "uploaded.json").isFile
 
+    fun markUploadProgress(
+        context: Context, sessionId: String, stage: String,
+        batches: Int = 0, records: Int = 0, detail: String? = null,
+    ) {
+        val dir = sessionDir(context, sessionId)
+        if (!dir.exists()) dir.mkdirs()
+        val state = JSONObject()
+            .put("updatedAt", System.currentTimeMillis())
+            .put("stage", stage)
+            .put("batches", batches)
+            .put("records", records)
+        if (!detail.isNullOrBlank()) state.put("detail", detail.take(120))
+        writeAtomic(AtomicFile(File(dir, "upload_progress.json")), state.toString())
+    }
+
+    fun uploadProgress(context: Context, sessionId: String): JSONObject? = try {
+        AtomicFile(File(sessionDir(context, sessionId), "upload_progress.json"))
+            .openRead().use { JSONObject(String(it.readBytes(), StandardCharsets.UTF_8)) }
+    } catch (_: Exception) { null }
+
     fun markUploadFailed(context: Context, sessionId: String, code: String, httpStatus: Int? = null) {
         val dir = sessionDir(context, sessionId)
         if (!dir.exists()) dir.mkdirs()
