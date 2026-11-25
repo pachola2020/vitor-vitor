@@ -67,4 +67,38 @@ class PokeIdleNormalizerTest {
         assertEquals("Pikachu", market.getString("species"))
         assertEquals(true, market.getBoolean("tmAoe"))
     }
+
+    @Test
+    fun reportsEveryRawLineThatWasNotNormalized() {
+        val directory = Files.createTempDirectory("pokeidle-normalizer-diagnostics").toFile()
+        try {
+            File(directory, "account_1.jsonl").writeText(
+                listOf(
+                    """{"timestamp":1795521660000,"payload":"{\\"t\\":\\"estado\\"}"}""",
+                    "",
+                    """{"timestamp":1795521660000}""",
+                    """{"timestamp":0,"payload":"{\\"t\\":\\"estado\\"}"}""",
+                    "{malformed",
+                ).joinToString("\\n"),
+            )
+
+            val emitted = mutableListOf<JSONObject>()
+            val stats = PokeIdleNormalizer.forEachSessionDirectory(directory, "session_1234567890") {
+                emitted.add(it)
+            }
+
+            assertEquals(5, stats.rawLinesRead)
+            assertEquals(1, stats.rawEventsEmitted)
+            assertEquals(1, stats.blankLines)
+            assertEquals(1, stats.missingPayload)
+            assertEquals(1, stats.invalidTimestamp)
+            assertEquals(1, stats.malformedLines)
+            assertEquals(0, stats.fileReadErrors)
+            assertEquals(1, emitted.size)
+            assertEquals("raw_event", emitted.single().getString("type"))
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
 }
