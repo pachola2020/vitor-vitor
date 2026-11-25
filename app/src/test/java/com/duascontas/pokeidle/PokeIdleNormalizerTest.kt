@@ -116,11 +116,7 @@ class PokeIdleNormalizerTest {
 
         assertEquals(sessionId, GameDataCapture.snapshotDrainBarrierSessionId(valid, 2))
         assertNull(GameDataCapture.snapshotDrainBarrierSessionId(valid, 1))
-        val rawBarrier = JSONObject()
-            .put("kind", "__POKEIDLE_STOP_BARRIER__")
-            .put("accountId", 2)
-            .put("sessionId", sessionId)
-            .toString()
+        val rawBarrier = "__POKEIDLE_STOP_BARRIER__:2:$sessionId"
         assertEquals(sessionId, GameDataCapture.rawStopBarrierSessionId(rawBarrier, 2))
         assertNull(GameDataCapture.rawStopBarrierSessionId(rawBarrier, 1))
         assertNull(GameDataCapture.snapshotDrainBarrierSessionId(
