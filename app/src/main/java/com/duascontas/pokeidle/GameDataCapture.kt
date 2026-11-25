@@ -118,14 +118,15 @@ object GameDataCapture {
                 if (!isMainFrame || sourceOrigin.scheme != "https" ||
                     sourceOrigin.host != "pokeidle.io" || sourceOrigin.port != -1
                 ) return@addWebMessageListener
-                val sessionId = rawSessions[accountId] ?: return@addWebMessageListener
                 val payload = message.data ?: return@addWebMessageListener
                 val appContext = context.applicationContext
-                if (payload == RAW_STOP_BARRIER) {
-                    CaptureSession.markAccountStage(appContext, sessionId, accountId, "raw_barrier_received")
-                    handleRawStopBarrier(appContext, accountId, sessionId)
+                val barrierSessionId = rawStopBarrierSessionId(payload, accountId)
+                if (barrierSessionId != null) {
+                    CaptureSession.markAccountStage(appContext, barrierSessionId, accountId, "raw_barrier_received")
+                    handleRawStopBarrier(accountId, barrierSessionId)
                     return@addWebMessageListener
                 }
+                val sessionId = rawSessions[accountId] ?: return@addWebMessageListener
                 CaptureSession.markAccountStage(appContext, sessionId, accountId, "raw_message_received")
                 if (payload == RAW_BINARY_MARKER) {
                     RawEventRecorder.recordDrop(appContext, accountId, sessionId)
@@ -220,7 +221,7 @@ object GameDataCapture {
                 let rawBarrierSent = false;
                 let snapshotBarrierSent = false;
                 if (rawBridge) {
-                  rawBridge.postMessage("$RAW_STOP_BARRIER");
+                  rawBridge.postMessage(JSON.stringify({kind: "$RAW_STOP_BARRIER", accountId: $accountId, sessionId: $encodedSessionId}));
                   rawBarrierSent = true;
                 }
                 if (snapshotBridge) {
@@ -264,7 +265,7 @@ object GameDataCapture {
         }
     }
 
-    private fun handleRawStopBarrier(context: Context, accountId: Int, sessionId: String) {
+    private fun handleRawStopBarrier(accountId: Int, sessionId: String) {
         val state = stopStates[stopKey(accountId, sessionId)] ?: return
         state.rawBarrierSeen.set(true)
         maybeStartRawClose(state)
@@ -332,11 +333,21 @@ object GameDataCapture {
         try { state.onClosed?.invoke() } catch (_: Exception) { }
     }
 
-    internal fun snapshotDrainBarrierSessionId(raw: String, accountId: Int): String? {
+    internal fun snapshotDrainBarrierSessionId(raw: String, accountId: Int): String? =
+        validatedBarrierSessionId(raw, accountId) { it.optBoolean("_captureBarrier", false) }
+
+    internal fun rawStopBarrierSessionId(raw: String, accountId: Int): String? =
+        validatedBarrierSessionId(raw, accountId) { it.optString("kind") == RAW_STOP_BARRIER }
+
+    private fun validatedBarrierSessionId(
+        raw: String,
+        accountId: Int,
+        markerMatches: (JSONObject) -> Boolean,
+    ): String? {
         return try {
             val message = JSONObject(raw)
             val sessionId = message.optString("sessionId")
-            if (message.optBoolean("_captureBarrier", false) &&
+            if (markerMatches(message) &&
                 message.optInt("accountId", -1) == accountId &&
                 Regex("^session_[A-Za-z0-9_-]{8,80}$").matches(sessionId)
             ) sessionId else null
