@@ -22,6 +22,10 @@ class EmptyCaptureException : Exception("No records were produced from the ended
 class NexusUploadWorker(context: Context, parameters: WorkerParameters) : Worker(context, parameters) {
     override fun doWork(): Result {
         val sessionId = inputData.getString(KEY_SESSION_ID) ?: return Result.failure()
+        if (CaptureSession.isUploaded(applicationContext, sessionId)) {
+            CaptureSession.markUploadProgress(applicationContext, sessionId, "already_uploaded")
+            return Result.success()
+        }
         val baseUrl = NexusSyncSettings.baseUrl(applicationContext)
         val token = DeviceCredentialStore.load(applicationContext)
         if (!NexusSyncSettings.isAllowedBaseUrl(baseUrl) || token.isNullOrBlank()) {
@@ -36,9 +40,10 @@ class NexusUploadWorker(context: Context, parameters: WorkerParameters) : Worker
             CaptureSession.markUploadProgress(applicationContext, sessionId, "normalizing_records")
             var sentBatches = 0
             var sentRecords = 0
+            var normalizationStats = PokeIdleNormalizationStats()
             val summary = NexusBatchUploader.upload(
                 sessionId,
-                { emit -> PokeIdleNormalizer.forEachRecord(applicationContext, sessionId, emit) },
+                { emit -> normalizationStats = PokeIdleNormalizer.forEachRecord(applicationContext, sessionId, emit) },
                 { batch ->
                     CaptureSession.markUploadProgress(applicationContext, sessionId, "sending_batch", sentBatches, sentRecords)
                     NexusApi.postJson(baseUrl, "/api/pokeidle/ingest", batch, token)
@@ -48,7 +53,10 @@ class NexusUploadWorker(context: Context, parameters: WorkerParameters) : Worker
                 },
             )
             if (summary.records <= 0 || summary.batches <= 0) throw EmptyCaptureException()
-            CaptureSession.markUploadProgress(applicationContext, sessionId, "server_confirmed", summary.batches, summary.records)
+            CaptureSession.markUploadProgress(
+                applicationContext, sessionId, "server_confirmed", summary.batches, summary.records,
+                normalizationStats.toDiagnosticDetail(),
+            )
             CaptureSession.markUploaded(applicationContext, sessionId, summary.records, summary.batches)
             CaptureSession.cleanupUploadedPayload(applicationContext, sessionId)
             Result.success(workDataOf("uploadedRecords" to summary.records, "batches" to summary.batches))
