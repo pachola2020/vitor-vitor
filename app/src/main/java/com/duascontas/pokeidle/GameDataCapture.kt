@@ -268,10 +268,13 @@ object GameDataCapture {
     private fun handleRawStopBarrier(accountId: Int, sessionId: String) {
         val state = stopStates[stopKey(accountId, sessionId)] ?: return
         state.rawBarrierSeen.set(true)
+        rawSessions.remove(accountId, sessionId)
         maybeStartRawClose(state)
     }
 
     private fun finishStopFallback(state: CaptureStopState) {
+        // Stop accepting additional messages even if the renderer never returns its barrier.
+        rawSessions.remove(state.accountId, state.sessionId)
         if (state.snapshotStarted.compareAndSet(false, true)) {
             try {
                 persistenceExecutor.execute {
