@@ -29,6 +29,9 @@ object GameDataCapture {
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) ||
             !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)
         ) {
+            CaptureSession.current(context)?.optString("sessionId")?.takeIf { it.isNotBlank() }?.let {
+                CaptureSession.markAccountStage(context, it, accountId, "bridge_unsupported")
+            }
             CaptureStore.save(context, accountId, JSONObject()
                 .put("accountId", accountId)
                 .put("status", "unsupported")
@@ -48,6 +51,9 @@ object GameDataCapture {
                 try {
                     val raw = message.data ?: return@addWebMessageListener
                     val appContext = context.applicationContext
+                    CaptureSession.current(appContext)?.optString("sessionId")?.takeIf { it.isNotBlank() }?.let {
+                        CaptureSession.markAccountStage(appContext, it, accountId, "snapshot_message_received")
+                    }
                     if (raw.length > 2_000_000) return@addWebMessageListener
                     // O callback do WebMessageListener roda na thread principal.
                     // O novo caminho bruto só separa o envelope e agenda a gravação; não interpreta o JSON do jogo.
@@ -90,6 +96,7 @@ object GameDataCapture {
                 val sessionId = rawSessions[accountId] ?: return@addWebMessageListener
                 val payload = message.data ?: return@addWebMessageListener
                 val appContext = context.applicationContext
+                CaptureSession.markAccountStage(appContext, sessionId, accountId, "raw_message_received")
                 if (payload == RAW_BINARY_MARKER) {
                     RawEventRecorder.recordDrop(appContext, accountId, sessionId)
                 } else {
@@ -111,7 +118,13 @@ object GameDataCapture {
             else rawSessions.remove(accountId)
             val script = SCRIPT.replace("__RAW_CAPTURE_SESSION__", JSONObject.quote(activeSession))
             WebViewCompat.addDocumentStartJavaScript(webView, script, setOf(ORIGIN))
+            CaptureSession.current(context)?.optString("sessionId")?.takeIf { it.isNotBlank() }?.let {
+                CaptureSession.markAccountStage(context, it, accountId, "bridge_installed")
+            }
         } catch (e: Exception) {
+            CaptureSession.current(context)?.optString("sessionId")?.takeIf { it.isNotBlank() }?.let {
+                CaptureSession.markAccountStage(context, it, accountId, "bridge_install_error", e.javaClass.simpleName)
+            }
             // Falha do mecanismo de captura não pode impedir o jogo de abrir.
             CaptureStore.save(context, accountId, JSONObject()
                 .put("accountId", accountId)
@@ -128,6 +141,7 @@ object GameDataCapture {
             rawSessions.remove(accountId)
         } else {
             rawSessions[accountId] = sessionId
+            CaptureSession.markAccountStage(webView?.context ?: return, sessionId, accountId, "raw_session_attached")
             // A WebView that was already open when capture started skips install()'s
             // beginSession path. Create its started marker here so upload waits for closeSession().
             if (previousSession != sessionId) {
