@@ -123,8 +123,17 @@ object GameDataCapture {
 
     fun setRawCaptureSession(webView: WebView?, accountId: Int, sessionId: String?) {
         if (accountId !in 1..3) return
-        if (sessionId.isNullOrBlank()) rawSessions.remove(accountId)
-        else rawSessions[accountId] = sessionId
+        val previousSession = rawSessions[accountId]
+        if (sessionId.isNullOrBlank()) {
+            rawSessions.remove(accountId)
+        } else {
+            rawSessions[accountId] = sessionId
+            // A WebView that was already open when capture started skips install()'s
+            // beginSession path. Create its started marker here so upload waits for closeSession().
+            if (previousSession != sessionId) {
+                webView?.context?.let { RawEventRecorder.beginSession(it, accountId, sessionId) }
+            }
+        }
         if (webView == null) return
         val encoded = JSONObject.quote(sessionId ?: "")
         try {
