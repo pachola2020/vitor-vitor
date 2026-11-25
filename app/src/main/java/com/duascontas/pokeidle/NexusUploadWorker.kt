@@ -100,7 +100,7 @@ class NexusUploadWorker(context: Context, parameters: WorkerParameters) : Worker
 }
 
 object NexusSyncScheduler {
-    fun enqueue(context: Context, sessionId: String) {
+    fun enqueue(context: Context, sessionId: String, replaceExisting: Boolean = false) {
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
@@ -112,7 +112,7 @@ object NexusSyncScheduler {
         CaptureSession.markUploadProgress(context, sessionId, "queued")
         WorkManager.getInstance(context).enqueueUniqueWork(
             "pokeidle-nexus-upload-$sessionId",
-            ExistingWorkPolicy.KEEP,
+            if (replaceExisting) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP,
             request,
         )
     }
