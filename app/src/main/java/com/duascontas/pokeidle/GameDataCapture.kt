@@ -6,7 +6,6 @@ import android.webkit.WebView
 import androidx.webkit.WebMessageCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.nio.charset.StandardCharsets
@@ -235,7 +234,7 @@ object GameDataCapture {
                   }));
                   snapshotBarrierSent = true;
                 }
-                return [rawBarrierSent, snapshotBarrierSent];
+                return (rawBarrierSent ? 1 : 0) | (snapshotBarrierSent ? 2 : 0);
               } catch (_) {
                 return false;
               }
@@ -245,12 +244,12 @@ object GameDataCapture {
             webView.evaluateJavascript(script) { result ->
                 // Each native listener completes its own barrier. Fall back only for the
                 // bridge that could not be posted; the other bridge may still be draining.
-                val barriers = try { result?.let { JSONArray(it) } } catch (_: Exception) { null }
-                if (barriers == null) {
+                val barrierFlags = result?.trim()?.toIntOrNull()
+                if (barrierFlags == null) {
                     finishStopFallback(state)
                 } else {
-                    if (!barriers.optBoolean(0, false)) finishRawBarrierFallback(state)
-                    if (!barriers.optBoolean(1, false)) finishSnapshotBarrierFallback(state)
+                    if ((barrierFlags and 1) == 0) finishRawBarrierFallback(state)
+                    if ((barrierFlags and 2) == 0) finishSnapshotBarrierFallback(state)
                 }
             }
         } catch (_: Exception) {
