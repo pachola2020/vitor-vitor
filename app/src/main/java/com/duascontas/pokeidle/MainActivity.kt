@@ -451,6 +451,7 @@ class MainActivity : Activity() {
             "network_error" -> "sem conexão; o Android tentará novamente"
             "configuration_missing" -> "configure a URL HTTPS e pareie o dispositivo"
             "capture_drain_timeout" -> "aguardando a finalização segura dos arquivos da captura; o envio será repetido"
+            "empty_capture" -> "nenhum registro foi gerado; a sessão não será marcada como enviada"
             "unexpected_error" -> "falha inesperada durante o envio"
             else -> ""
         }
