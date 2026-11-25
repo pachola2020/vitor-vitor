@@ -72,14 +72,15 @@ class PokeIdleNormalizerTest {
     fun reportsEveryRawLineThatWasNotNormalized() {
         val directory = Files.createTempDirectory("pokeidle-normalizer-diagnostics").toFile()
         try {
+            val validPayload = JSONObject().put("t", "estado").toString()
+            val validLine = JSONObject().put("timestamp", 1795521660000L)
+                .put("payload", validPayload).toString()
+            val missingPayloadLine = JSONObject().put("timestamp", 1795521660000L).toString()
+            val invalidTimestampLine = JSONObject().put("timestamp", 0L)
+                .put("payload", validPayload).toString()
             File(directory, "account_1.jsonl").writeText(
-                listOf(
-                    """{"timestamp":1795521660000,"payload":"{\\"t\\":\\"estado\\"}"}""",
-                    "",
-                    """{"timestamp":1795521660000}""",
-                    """{"timestamp":0,"payload":"{\\"t\\":\\"estado\\"}"}""",
-                    "{malformed",
-                ).joinToString("\\n"),
+                listOf(validLine, "", missingPayloadLine, invalidTimestampLine, "{malformed")
+                    .joinToString("\n"),
             )
 
             val emitted = mutableListOf<JSONObject>()
@@ -100,5 +101,4 @@ class PokeIdleNormalizerTest {
             directory.deleteRecursively()
         }
     }
-
 }
