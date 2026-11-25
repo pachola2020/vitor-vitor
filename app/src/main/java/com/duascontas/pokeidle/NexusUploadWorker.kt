@@ -27,17 +27,30 @@ class NexusUploadWorker(context: Context, parameters: WorkerParameters) : Worker
             return Result.failure()
         }
 
+        CaptureSession.markUploadProgress(applicationContext, sessionId, "worker_started")
         return try {
+            CaptureSession.markUploadProgress(applicationContext, sessionId, "waiting_for_capture_files")
             awaitRawWriters(sessionId)
+            CaptureSession.markUploadProgress(applicationContext, sessionId, "normalizing_records")
+            var sentBatches = 0
+            var sentRecords = 0
             val summary = NexusBatchUploader.upload(
                 sessionId,
                 { emit -> PokeIdleNormalizer.forEachRecord(applicationContext, sessionId, emit) },
-                { batch -> NexusApi.postJson(baseUrl, "/api/pokeidle/ingest", batch, token) },
+                { batch ->
+                    CaptureSession.markUploadProgress(applicationContext, sessionId, "sending_batch", sentBatches, sentRecords)
+                    NexusApi.postJson(baseUrl, "/api/pokeidle/ingest", batch, token)
+                    sentBatches++
+                    sentRecords += batch.optJSONArray("records")?.length() ?: 0
+                    CaptureSession.markUploadProgress(applicationContext, sessionId, "batch_accepted", sentBatches, sentRecords)
+                },
             )
+            CaptureSession.markUploadProgress(applicationContext, sessionId, "server_confirmed", summary.batches, summary.records)
             CaptureSession.markUploaded(applicationContext, sessionId, summary.records, summary.batches)
             CaptureSession.cleanupUploadedPayload(applicationContext, sessionId)
             Result.success(workDataOf("uploadedRecords" to summary.records, "batches" to summary.batches))
         } catch (_: CaptureDrainTimeoutException) {
+            CaptureSession.markUploadProgress(applicationContext, sessionId, "retrying", detail = "capture_drain_timeout")
             CaptureSession.markUploadFailed(applicationContext, sessionId, "capture_drain_timeout")
             Result.retry()
         } catch (error: NexusHttpException) {
@@ -47,12 +60,15 @@ class NexusUploadWorker(context: Context, parameters: WorkerParameters) : Worker
                 error.retryable -> "http_retryable"
                 else -> "http_client_error"
             }
+            CaptureSession.markUploadProgress(applicationContext, sessionId, "http_error", detail = "HTTP ${error.status}")
             CaptureSession.markUploadFailed(applicationContext, sessionId, code, error.status)
             if (error.retryable) Result.retry() else Result.failure()
         } catch (_: IOException) {
+            CaptureSession.markUploadProgress(applicationContext, sessionId, "network_retry", detail = "network_error")
             CaptureSession.markUploadFailed(applicationContext, sessionId, "network_error")
             Result.retry()
         } catch (_: Exception) {
+            CaptureSession.markUploadProgress(applicationContext, sessionId, "unexpected_error", detail = error.javaClass.simpleName + ": " + (error.message ?: ""))
             CaptureSession.markUploadFailed(applicationContext, sessionId, "unexpected_error")
             Result.failure()
         }
@@ -93,6 +109,7 @@ object NexusSyncScheduler {
             .setConstraints(constraints)
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .build()
+        CaptureSession.markUploadProgress(context, sessionId, "queued")
         WorkManager.getInstance(context).enqueueUniqueWork(
             "pokeidle-nexus-upload-$sessionId",
             ExistingWorkPolicy.KEEP,
