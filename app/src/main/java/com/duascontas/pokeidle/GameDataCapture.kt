@@ -1028,7 +1028,7 @@ object GameDataCapture {
               merge(msg.estado && typeof msg.estado === 'object' && !Array.isArray(msg.estado) ? msg.estado : {});
               previousBallCounts = readBallCounts();
               publish('welcome', true);
-            } else if (msg.t === 'estado' && state) {
+            } else if (msg.t === 'estado') {
               diagnostics.estado++;
               merge(msg.estado && typeof msg.estado === 'object' && !Array.isArray(msg.estado) ? msg.estado : null);
               trackBallUse();
