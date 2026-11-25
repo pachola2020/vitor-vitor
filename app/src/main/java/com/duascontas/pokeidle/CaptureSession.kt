@@ -48,6 +48,39 @@ object CaptureSession {
         return File(File(context.filesDir, "pokeidle_capture_sessions"), sessionId)
     }
 
+    private val diagnosticLocks = ConcurrentHashMap<Int, Any>()
+
+    fun markAccountStage(
+        context: Context, sessionId: String, accountId: Int, stage: String, detail: String? = null,
+    ) {
+        if (accountId !in 1..3 || stage.isBlank()) return
+        val lock = diagnosticLocks.getOrPut(accountId) { Any() }
+        synchronized(lock) {
+            try {
+                val dir = sessionDir(context.applicationContext, sessionId)
+                if (!dir.exists() && !dir.mkdirs()) return
+                val target = AtomicFile(File(dir, "diagnostics_account_$accountId.json"))
+                val state = try {
+                    target.openRead().use { JSONObject(String(it.readBytes(), StandardCharsets.UTF_8)) }
+                } catch (_: Exception) { JSONObject() }
+                val stages = state.optJSONObject("stages") ?: JSONObject()
+                if (!stages.has(stage)) stages.put(stage, System.currentTimeMillis())
+                state.put("accountId", accountId).put("sessionId", sessionId).put("stages", stages)
+                if (!detail.isNullOrBlank()) {
+                    val details = state.optJSONObject("details") ?: JSONObject()
+                    details.put(stage, detail.take(100))
+                    state.put("details", details)
+                }
+                writeAtomic(target, state.toString())
+            } catch (_: Exception) { }
+        }
+    }
+
+    fun accountDiagnostic(context: Context, sessionId: String, accountId: Int): JSONObject? = try {
+        AtomicFile(File(sessionDir(context, sessionId), "diagnostics_account_$accountId.json"))
+            .openRead().use { JSONObject(String(it.readBytes(), StandardCharsets.UTF_8)) }
+    } catch (_: Exception) { null }
+
     fun saveSnapshot(context: Context, sessionId: String, accountId: Int, snapshot: JSONObject?) {
         if (accountId !in 1..3 || snapshot == null) return
         val dir = File(sessionDir(context, sessionId), "snapshots")
