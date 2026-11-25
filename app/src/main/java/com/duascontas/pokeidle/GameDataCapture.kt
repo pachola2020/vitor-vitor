@@ -235,7 +235,7 @@ object GameDataCapture {
                   }));
                   snapshotBarrierSent = true;
                 }
-                return JSON.stringify([rawBarrierSent, snapshotBarrierSent]);
+                return [rawBarrierSent, snapshotBarrierSent];
               } catch (_) {
                 return false;
               }
