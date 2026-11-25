@@ -404,6 +404,7 @@ class MainActivity : Activity() {
         }
         val state = CaptureSession.start(this)
         val sessionId = state.optString("sessionId")
+        for (account in 1..2) CaptureSession.markAccountStage(this, sessionId, account, "command_sent")
         sendBroadcast(Intent(OverlayService.ACTION_CAPTURE_START).setPackage(packageName).putExtra("sessionId", sessionId))
         updateRawCaptureUi()
         Toast.makeText(this, "Captura iniciada para as contas abertas.", Toast.LENGTH_LONG).show()
